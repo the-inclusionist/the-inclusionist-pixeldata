@@ -1,0 +1,22 @@
+# Dependencies / build output
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Vitest browser-mode artefacts (generated per run, never versioned)
+.vitest-attachments/
+tests/__screenshots__/
+
+# Local, unversioned dev-server configuration
+.claude/launch.json
+
+# Source art brought in to annotate. It is INPUT, not source: it belongs to whoever drew it, it is
+# reproducible from the URL recorded in each set's `source` block, and once inside git history it never
+# leaves. The files this repository produces are versioned; the pixel art they describe is not.
+art-in/
+
+# Operating system
+.DS_Store
+Thumbs.db
+*.log

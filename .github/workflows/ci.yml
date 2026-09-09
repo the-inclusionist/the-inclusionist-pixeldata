@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# THE CALLER — and it is short on purpose (ADR-0068 §4).
+#
+# The gate itself lives once, in the engine repository, and every repository that needs it invokes it.
+# Copying it here would create the failure that record refuses: copies drift, and the ones that drift
+# silently are the ones that stop gating. This file is allowed to grow only in the `with:` block.
+#
+# ⚠️ THE CALLER ARRIVES BEFORE ANYTHING IT CAN GATE, and that is deliberate rather than sloppy. ADR-0067 §2
+# says a repository is born carrying the CI caller, because configuration is cheapest on an empty repository
+# and most expensive on one that has already been pushed to wrongly. The consequence is stated plainly in the
+# README: the reusable gate runs `npm ci`, `npm run typecheck`, `npm test` and `npm run build`, so it CANNOT
+# pass until the toolchain lands. THE FIRST PRODUCT COMMIT IS THE FIRST COMMIT WHOSE CI CAN PASS.
+#
+# `a11y: false`, and this is not an oversight to be corrected quietly.
+#
+# The engine's gate can run axe against a built app over HTTP, but it needs the repository to have a
+# `preview` and a `test:a11y` script, and to have had somebody WATCH it pass once. Neither is true here yet.
+# Turning on a gate that has never run is how a red gate reaches a branch. It flips when this application has
+# a page to audit, and the line changes in the commit that proves it — not before.
+#
+# ⚠️ AND IT WILL MATTER MORE HERE THAN THE `false` SUGGESTS: this is an annotation tool for an
+# accessibility-first project, and a person will spend hours in it. The flag is off because the evidence is
+# missing, not because the requirement is.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: the-inclusionist/the-inclusionist-engine/.github/workflows/game-ci.yml@main
+    with:
+      a11y: false
+
+  # ============================================================================================
+  # ADR-0123 clause 4 — a repository runs the records' OWN validator, from the records' OWN tree.
+  #
+  # 📌 A DORMANT GATE IS A NOTICE, NOT A PASS. `the-inclusionist-docs` is a separate repository, and a
+  # workflow's `GITHUB_TOKEN` does not reach one — measured in the engine's run 34352635399, which failed
+  # with `Not Found`. It needs a fine-grained PAT with read access, stored here as `DOCS_READ_TOKEN`, and
+  # creating that secret is the Dev's act. Until it exists this job SAYS it checked nothing.
+  # ============================================================================================
+  adr:
+    runs-on: ubuntu-latest
+    env:
+      # ⚠️ A secret cannot be read in a job-level `if:`, so it becomes a boolean here and the steps read it.
+      HAS_TOKEN: ${{ secrets.DOCS_READ_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: DORMANT — the records could not be fetched, so nothing here was checked
+        if: env.HAS_TOKEN != 'true'
+        run: |
+          echo "::warning title=ADR gate dormant::the secret DOCS_READ_TOKEN is not set, so the records were" \
+               "NOT fetched and NOTHING was validated. This job is a notice, not a pass. Create a" \
+               "fine-grained PAT with read access to the-inclusionist/the-inclusionist-docs and store it as" \
+               "DOCS_READ_TOKEN in this repository."
+
+      - name: the records
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: the-inclusionist/the-inclusionist-docs
+          path: adr-tree
+          token: ${{ secrets.DOCS_READ_TOKEN }}
+
+      - uses: actions/setup-python@v7
+        if: env.HAS_TOKEN == 'true'
+        with:
+          python-version: "3.12"
+      - if: env.HAS_TOKEN == 'true'
+        run: pip install --quiet pyyaml
+
+      # ⚠️ NO `--repo pixeldata=.` HERE, and its absence is the honest state. The validator's
+      # `REPOS_CONHECIDOS` is the closed list `{engine, docs}`, and an undeclared prefix is counted as a
+      # PROBLEM by design — so this repository can only be named in a `confirmed-by` after that list gains
+      # its prefix. No record names it yet. The day one does, this line grows and the list grows with it.
+      - name: validate the ADR records
+        if: env.HAS_TOKEN == 'true'
+        run: python adr-tree/scripts/validate-adr.py adr-tree/docs/2-Architecture/adr --repo docs=adr-tree
