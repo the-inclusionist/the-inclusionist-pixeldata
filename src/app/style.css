@@ -92,3 +92,76 @@ body {
   color: var(--muted);
 }
 .zone-explanation p { margin: 0; }
+
+/* ---- panel 1: the image at 4× ---- */
+.panel-head { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
+.panel-head h2 { flex: 1 1 auto; }
+.sheet-pick, .add-region { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); }
+.sheet-pick select, .add-region input, .add-region button {
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.2rem 0.4rem; font: inherit;
+}
+.add-region button { cursor: pointer; }
+.add-region button:hover { border-color: var(--accent); }
+
+.stage { display: grid; place-items: center; overflow: auto; padding: 0.6rem 0; }
+/* The chequerboard is what makes a transparent hole read as a hole rather than as black. */
+#art-canvas {
+  image-rendering: pixelated;
+  background-image:
+    linear-gradient(45deg, #1b2136 25%, transparent 25%, transparent 75%, #1b2136 75%),
+    linear-gradient(45deg, #1b2136 25%, transparent 25%, transparent 75%, #1b2136 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  background-color: #0d1222;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+/* ---- panel 2: the colours, and what each one means ---- */
+.colours { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+.colour {
+  display: grid;
+  grid-template-columns: 2rem 4rem 1fr 4.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.colour.is-isolated { border-color: var(--accent); background: #0f1424; }
+/*
+  The chequerboard is the BACKDROP and the colour sits on top of it, in a pseudo-element.
+  RED FLAG THAT COST A ROUND OF REVIEW: `background-color` is the BOTTOM layer and `background-image` paints
+  OVER it, so a chequerboard set as the image is in FRONT of the colour — opaque swatches came out wearing
+  grey triangles. The colour has to be the upper layer for an opaque one to hide the board and a
+  semi-transparent one to let it through, which is 119 of the 197 measured files.
+*/
+.swatch {
+  position: relative;
+  width: 1.6rem; height: 1.6rem;
+  border: 1px solid #0006; border-radius: 4px;
+  cursor: pointer; padding: 0;
+  background-image:
+    linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+    linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+.swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--swatch, transparent);
+}
+.swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.colour .count { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.colour select, .colour input {
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.15rem 0.3rem; font: inherit; width: 100%;
+}
+.colour input:disabled { opacity: 0.4; }
+
+.refused { list-style: none; margin: 0.4rem 0 0; padding: 0; color: var(--problem); display: grid; gap: 0.2rem; }

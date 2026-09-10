@@ -35,6 +35,18 @@ const PT_BR: Dictionary = {
   'read.colorChunks': 'Blocos de gestão de cor',
   'read.none': 'nenhum',
   'read.failed': 'Não foi possível ler este ficheiro:',
+  'colour.nothing': 'nada (transparente)',
+  'region.nothing': '— nada —',
+  'row.region': 'Região',
+  'row.level': 'Nível',
+  'sheet.label': 'Folha',
+  'region.add': 'Nova região',
+  'region.addLabel': 'Nome da região a acrescentar',
+  'explain.colours': 'cores',
+  'explain.sheets': 'folhas no conjunto',
+  'explain.isolated': 'isolada',
+  'explain.refused': 'ficheiros recusados',
+  'state.notWired': 'Os painéis 3 e 4 ainda não estão ligados.',
 };
 
 const EN: Dictionary = {
@@ -59,6 +71,18 @@ const EN: Dictionary = {
   'read.colorChunks': 'Colour-management chunks',
   'read.none': 'none',
   'read.failed': 'This file could not be read:',
+  'colour.nothing': 'nothing (transparent)',
+  'region.nothing': '— nothing —',
+  'row.region': 'Region',
+  'row.level': 'Level',
+  'sheet.label': 'Sheet',
+  'region.add': 'New region',
+  'region.addLabel': 'Name of the region to add',
+  'explain.colours': 'colours',
+  'explain.sheets': 'sheets in the set',
+  'explain.isolated': 'isolated',
+  'explain.refused': 'files refused',
+  'state.notWired': 'Panels 3 and 4 are not wired up yet.',
 };
 
 const ES: Dictionary = {
@@ -83,6 +107,18 @@ const ES: Dictionary = {
   'read.colorChunks': 'Bloques de gestión de color',
   'read.none': 'ninguno',
   'read.failed': 'No se pudo leer este archivo:',
+  'colour.nothing': 'nada (transparente)',
+  'region.nothing': '— nada —',
+  'row.region': 'Región',
+  'row.level': 'Nivel',
+  'sheet.label': 'Hoja',
+  'region.add': 'Nueva región',
+  'region.addLabel': 'Nombre de la región a añadir',
+  'explain.colours': 'colores',
+  'explain.sheets': 'hojas en el conjunto',
+  'explain.isolated': 'aislado',
+  'explain.refused': 'archivos rechazados',
+  'state.notWired': 'Los paneles 3 y 4 aún no están conectados.',
 };
 
 const DICTIONARIES: Readonly<Record<Language, Dictionary>> = { 'pt-BR': PT_BR, en: EN, es: ES };

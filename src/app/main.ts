@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The page shell, and what it can honestly do TODAY: open PNGs with our own decoder and say what it found.
-// The four panels exist in the markup and are not wired; the footer says so in words.
-//
-// 🎯 This is not filler. It runs `decodePng` in a real browser, which is the half of ADR-0134 §7 that Node
-// cannot prove: the decoder must work with `DecompressionStream` in Chromium, and it must be the thing that
-// reads the file rather than `createImageBitmap`.
-import { decodePng, type DecodedPng } from '../png/decode.ts';
+// The wiring, and nothing else. Decoding is in `src/png/`, grouping in `src/group/`, the format in
+// `src/format/`, the arithmetic of the panels in `annotate.ts`, and the drawing in `panels.ts` — every one
+// of those is proved in Node without a browser. What is left here is what only a browser can do: read a
+// file the person chose, and hand a click back.
 import { applyTranslations, setLanguage, t, LANGUAGES, type Language } from './i18n.ts';
+import { importFiles, type Imported, type SetView } from './import.ts';
+import { paintArt, paintColours, explain, type Selection } from './panels.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -15,78 +14,110 @@ function isLanguage(value: string): value is Language {
   return (LANGUAGES as readonly string[]).includes(value);
 }
 
-/** Count the distinct colours and how many pixels are neither fully opaque nor fully transparent. */
-function survey(img: DecodedPng): { colors: number; partialAlpha: number } {
-  const seen = new Set<number>();
-  let partialAlpha = 0;
-  for (let i = 0; i < img.width * img.height; i++) {
-    const d = i * 4;
-    const a = img.rgba[d + 3]!;
-    if (a !== 0 && a !== 255) partialAlpha++;
-    // A fully transparent pixel is the SAME absence whatever RGB sits under it, so it collapses to one key.
-    seen.add(a === 0 ? -1 : ((img.rgba[d]! << 24) | (img.rgba[d + 1]! << 16) | (img.rgba[d + 2]! << 8) | a) >>> 0);
+let imported: Imported = { sets: [], refused: [] };
+let selection: Selection | null = null;
+
+/** Rebuild everything from the current state. Small enough to redraw whole; big enough to be one function. */
+function render(): void {
+  const art = $<HTMLCanvasElement>('art-canvas');
+  const chooser = $<HTMLSelectElement>('sheet');
+
+  if (!selection) {
+    art.hidden = true;
+    chooser.hidden = true;
+    $('colours').replaceChildren();
+  } else {
+    art.hidden = false;
+    chooser.hidden = false;
+    paintArt(art, selection);
+    paintColours($('colours'), selection, {
+      onIsolate: (index) => { selection!.isolated = index; render(); },
+      onRegion: (index, region) => { selection!.set.colorMap[index] = { region, level: selection!.set.colorMap[index]!.level }; render(); },
+      onLevel: (index, level) => { selection!.set.colorMap[index] = { region: selection!.set.colorMap[index]!.region, level }; render(); },
+    });
   }
-  return { colors: seen.size, partialAlpha };
+
+  $('explain').textContent = `${explain(selection, imported.refused.length)} — ${t('state.notWired')}`;
+  renderRefusals();
 }
 
-function row(label: string, value: string): HTMLElement {
-  const li = document.createElement('li');
-  const name = document.createElement('span');
-  name.className = 'k';
-  name.textContent = label;
-  const val = document.createElement('strong');
-  val.textContent = value;
-  li.append(name, val);
-  return li;
+/** ⚠️ A refused file is NAMED. Silently dropping one lets a person annotate a set that is missing a sheet. */
+function renderRefusals(): void {
+  const host = $('refused');
+  if (imported.refused.length === 0) { host.replaceChildren(); return; }
+  const list = document.createElement('ul');
+  list.className = 'refused';
+  for (const { name, why } of imported.refused) {
+    const item = document.createElement('li');
+    item.textContent = `${name} — ${t('read.failed')} ${why}`;
+    list.append(item);
+  }
+  host.replaceChildren(list);
 }
 
-async function report(file: File): Promise<HTMLElement> {
-  const section = document.createElement('article');
-  const title = document.createElement('h3');
-  title.textContent = file.name;
-  section.append(title);
+/** Every sheet of every set, so panel 1 has something to show before panel 3 exists to choose from. */
+function fillChooser(): void {
+  const chooser = $<HTMLSelectElement>('sheet');
+  chooser.replaceChildren();
+  imported.sets.forEach((set, s) => {
+    set.sheets.forEach((sheet, i) => {
+      const option = document.createElement('option');
+      option.value = `${s}:${i}`;
+      option.textContent = imported.sets.length > 1 ? `${sheet.name} (${s + 1})` : sheet.name;
+      chooser.append(option);
+    });
+  });
+}
 
-  try {
-    const img = await decodePng(new Uint8Array(await file.arrayBuffer()));
-    const { colors, partialAlpha } = survey(img);
-    const list = document.createElement('ul');
-    list.className = 'facts';
-    list.append(
-      row(t('read.size'), `${img.width} × ${img.height}`),
-      row(t('read.colorType'), String(img.colorType)),
-      row(t('read.colors'), String(colors)),
-      row(t('read.partialAlpha'), String(partialAlpha)),
-      row(t('read.colorChunks'), img.colorManagementChunks.join(', ') || t('read.none')),
-    );
-    section.append(list);
-  } catch (error) {
-    const problem = document.createElement('p');
-    problem.className = 'problem';
-    problem.textContent = `${t('read.failed')} ${error instanceof Error ? error.message : String(error)}`;
-    section.append(problem);
-  }
-  return section;
+function select(setIndex: number, sheetIndex: number): void {
+  const set = imported.sets[setIndex] as SetView | undefined;
+  const sheet = set?.sheets[sheetIndex];
+  selection = set && sheet ? { set, sheet, isolated: null } : null;
+}
+
+function addRegion(name: string): void {
+  if (!selection || !name.trim()) return;
+  const ids = Object.keys(selection.set.regionNames).map(Number);
+  selection.set.regionNames[Math.max(0, ...ids) + 1] = name.trim();
+  render();
 }
 
 function start(): void {
-  const select = $<HTMLSelectElement>('lang');
-  select.addEventListener('change', () => {
-    if (isLanguage(select.value)) {
-      setLanguage(select.value);
+  const languageChooser = $<HTMLSelectElement>('lang');
+  languageChooser.addEventListener('change', () => {
+    if (isLanguage(languageChooser.value)) {
+      setLanguage(languageChooser.value);
       applyTranslations();
+      render();
     }
   });
 
   $<HTMLInputElement>('files').addEventListener('change', async (event) => {
     const input = event.currentTarget as HTMLInputElement;
-    const art = $('art');
-    art.replaceChildren();
-    for (const file of Array.from(input.files ?? [])) art.append(await report(file));
-    $('explain').textContent = art.childElementCount > 0 ? t('state.notBuilt') : t('state.empty');
+    const chosen = Array.from(input.files ?? []);
+    imported = await importFiles(
+      await Promise.all(chosen.map(async (file) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }))),
+    );
+    fillChooser();
+    select(0, 0);
+    render();
+  });
+
+  $<HTMLSelectElement>('sheet').addEventListener('change', (event) => {
+    const [s, i] = (event.currentTarget as HTMLSelectElement).value.split(':').map(Number);
+    select(s!, i!);
+    render();
+  });
+
+  const newRegion = $<HTMLInputElement>('new-region');
+  $<HTMLButtonElement>('add-region').addEventListener('click', () => {
+    addRegion(newRegion.value);
+    newRegion.value = '';
   });
 
   setLanguage('pt-BR');
   applyTranslations();
+  render();
 }
 
 start();

@@ -36,17 +36,30 @@
     <label class="btn" for="files" data-i18n="import.label"></label>
     <input id="files" type="file" accept="image/png" multiple hidden>
     <p class="hint" data-i18n="import.hint"></p>
+    <div id="refused"></div>
   </div>
 
   <div class="panels">
     <section class="panel panel--art" aria-labelledby="h-art">
-      <h2 id="h-art" data-i18n="panel.art"></h2>
-      <div id="art" class="body"></div>
+      <div class="panel-head">
+        <h2 id="h-art" data-i18n="panel.art"></h2>
+        <label class="sheet-pick">
+          <span data-i18n="sheet.label"></span>
+          <select id="sheet" hidden></select>
+        </label>
+      </div>
+      <div class="body stage"><canvas id="art-canvas" hidden></canvas></div>
     </section>
 
     <section class="panel panel--colors" aria-labelledby="h-colors">
-      <h2 id="h-colors" data-i18n="panel.colors"></h2>
-      <div id="colors" class="body"></div>
+      <div class="panel-head">
+        <h2 id="h-colors" data-i18n="panel.colors"></h2>
+        <span class="add-region">
+          <input id="new-region" type="text" data-i18n-label="region.addLabel" size="12">
+          <button id="add-region" type="button" data-i18n="region.add"></button>
+        </span>
+      </div>
+      <div id="colours" class="body"></div>
     </section>
 
     <section class="panel panel--set" aria-labelledby="h-set">
