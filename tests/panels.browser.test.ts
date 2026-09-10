@@ -4,7 +4,7 @@
 // cannot see — that a click reaches the canvas, that the canvas holds the pixels `isolate` computed, and
 // that a swatch says what it is to something that cannot see colour.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { paintArt, paintColours, type Selection } from '../src/app/panels.ts';
+import { paintArt, paintColours, paintSet, artPixels, type Selection } from '../src/app/panels.ts';
 import { packColour, NOTHING, type Meaning } from '../src/format/semantic.ts';
 import type { SetView, SheetView } from '../src/app/import.ts';
 
@@ -17,7 +17,13 @@ function aSelection(isolated: number | null): Selection {
   const grid = Int32Array.from([2, 1, 1, 0]);
   const sheet: SheetView = {
     name: 'tiny.png',
-    image: { width: 2, height: 2, rgba: new Uint8Array(16), colorManagementChunks: [], colorType: 6 },
+    // ⚠️ The pixels MUST agree with (order, grid): the difference view compares what comes back out of the
+    // file against this array, so a placeholder of zeros would light up every pixel and prove nothing.
+    image: {
+      width: 2, height: 2,
+      rgba: Uint8Array.from([200, 40, 40, 255, 30, 30, 30, 255, 30, 30, 30, 255, 0, 0, 0, 0]),
+      colorManagementChunks: [], colorType: 6,
+    },
     grid,
     drawingHash: 'x',
   };
@@ -29,7 +35,7 @@ function aSelection(isolated: number | null): Selection {
     colorMap: [{ region: 0, level: 0 }, { region: 1, level: 0 }, { region: 1, level: 1 }] as Meaning[],
     regionNames: { 1: 'material' },
   };
-  return { set, sheet, isolated };
+  return { set, sheet, isolated, view: 'original' };
 }
 
 const NO_OP = { onIsolate: () => {}, onRegion: () => {}, onLevel: () => {} };
@@ -49,27 +55,85 @@ beforeEach(() => {
   document.body.append(canvas, host);
 });
 
+const SOURCE = { author: 'x', url: 'x', door: 'grant', licence: 'CC0-1.0', outgoingLicence: 'CC0-1.0', derivedFrom: null };
+const draftFor = (selection: Selection) => ({ name: 'tiny', set: selection.set, source: SOURCE });
+
+/** Draw whatever the current view says, the way `main.ts` does it. */
+function show(selection: Selection): number[] {
+  const drawn = artPixels(selection, draftFor(selection));
+  if ('problem' in drawn) throw new Error(drawn.problem);
+  paintArt(canvas, selection.sheet, drawn.rgba);
+  return pixelsOf(canvas);
+}
+
 describe('paintArt', () => {
   it('Right: the canvas is the image at its own size, and CSS does the 4×', () => {
     // Scaling the backing store instead would blur the art on any browser that resamples, and the whole
     // point of showing pixel art larger is that each pixel stays a square.
-    paintArt(canvas, aSelection(null));
+    show(aSelection(null));
     expect(canvas.width).toBe(2);
     expect(canvas.style.width).toBe('8px');
   });
 
   it('🎯 THE GESTURE: with a colour chosen, it keeps its bytes and the rest go grey', () => {
-    paintArt(canvas, aSelection(2)); // index 2 is the red
-    const pixels = pixelsOf(canvas);
+    const pixels = show(aSelection(2)); // index 2 is the red
     expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]); // the chosen one, untouched
     const grey = Math.round(0.299 * 30 + 0.587 * 30 + 0.114 * 30);
     expect(pixels.slice(4, 8)).toEqual([grey, grey, grey, 255]); // everything else
   });
 
   it('Right: with nothing chosen it is the true picture, undistorted', () => {
-    paintArt(canvas, aSelection(null));
-    const pixels = pixelsOf(canvas);
+    const pixels = show(aSelection(null));
     expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]);
+    expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
+  });
+});
+
+describe('the view switcher, which is where the round trip is watched', () => {
+  it('🔴 THE PROOF ON SCREEN: what comes back out of the FILE is the picture that went in', () => {
+    const selection = { ...aSelection(null), view: 'recomposed' as const };
+    const pixels = show(selection);
+    expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]);
+    expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
+  });
+
+  it('🔴 Right: with a sound annotation the difference view is empty — nothing lights up', () => {
+    const pixels = show({ ...aSelection(null), view: 'difference' as const });
+    expect(pixels.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it('🔴 Boundary: an annotation that cannot be read back REFUSES to draw and says why', () => {
+    // Drawing something plausible here would be the worst outcome: the person would believe the annotation
+    // closes, and find out when a game renders their art wrong.
+    const selection = { ...aSelection(null), view: 'recomposed' as const };
+    selection.set.colorMap = [{ region: 0, level: 0 }, { region: 1, level: 0 }, { region: 1, level: 0 }];
+    const drawn = artPixels(selection, draftFor(selection));
+    expect('problem' in drawn && drawn.problem).toMatch(/claimed twice/i);
+  });
+});
+
+describe('paintSet — panel 3', () => {
+  it('Right: one thumbnail per sheet of the set, and the current one is marked', () => {
+    const selection = aSelection(null);
+    paintSet(host, selection, () => {});
+    const thumbs = host.querySelectorAll('.thumb');
+    expect(thumbs).toHaveLength(1);
+    expect(thumbs[0]!.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('Interface: clicking a thumbnail asks for that sheet by index', () => {
+    const picked: number[] = [];
+    paintSet(host, aSelection(null), (i) => picked.push(i));
+    host.querySelector<HTMLButtonElement>('.thumb')!.click();
+    expect(picked).toEqual([0]);
+  });
+
+  it('Right: a thumbnail is the TRUE picture, never the isolated one', () => {
+    // Panel 3 is for recognising a sheet. Greying it to match whatever panel 1 is doing would make every
+    // thumbnail look alike at the exact moment the person is trying to tell them apart.
+    paintSet(host, aSelection(2), () => {});
+    const thumb = host.querySelector('canvas') as HTMLCanvasElement;
+    const pixels = [...thumb.getContext('2d')!.getImageData(0, 0, 2, 2).data];
     expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
   });
 });

@@ -47,8 +47,14 @@
           <span data-i18n="sheet.label"></span>
           <select id="sheet" hidden></select>
         </label>
+        <fieldset id="views" class="views" hidden>
+          <legend class="visually-hidden" data-i18n="view.legend"></legend>
+          <label><input type="radio" name="view" value="original" checked><span data-i18n="view.original"></span></label>
+          <label><input type="radio" name="view" value="recomposed"><span data-i18n="view.recomposed"></span></label>
+          <label><input type="radio" name="view" value="difference"><span data-i18n="view.difference"></span></label>
+        </fieldset>
       </div>
-      <div class="body stage"><canvas id="art-canvas" hidden></canvas></div>
+      <div class="body stage"><canvas id="art-canvas" hidden></canvas><p id="art-problem" class="problem" hidden></p></div>
     </section>
 
     <section class="panel panel--colors" aria-labelledby="h-colors">
@@ -65,6 +71,24 @@
     <section class="panel panel--set" aria-labelledby="h-set">
       <h2 id="h-set" data-i18n="panel.samePalette"></h2>
       <div id="set" class="body"></div>
+    </section>
+
+    <section class="panel panel--save" id="save-panel" aria-labelledby="h-save" hidden>
+      <h2 id="h-save" data-i18n="save.title"></h2>
+      <div class="body save">
+        <label><span data-i18n="save.name"></span><input id="set-name" type="text"></label>
+        <label><span data-i18n="save.author"></span><input id="src-author" type="text"></label>
+        <label><span data-i18n="save.url"></span><input id="src-url" type="url"></label>
+        <label><span data-i18n="save.licence"></span><input id="src-licence" type="text" value="CC0-1.0"></label>
+        <label><span data-i18n="save.door"></span>
+          <select id="src-door">
+            <option value="licence">licence</option>
+            <option value="grant">grant</option>
+            <option value="bridge">bridge</option>
+          </select>
+        </label>
+        <button id="save" type="button" data-i18n="save.action"></button>
+      </div>
     </section>
 
     <section class="panel panel--variants" aria-labelledby="h-variants">

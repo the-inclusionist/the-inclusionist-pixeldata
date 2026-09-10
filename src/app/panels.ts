@@ -7,31 +7,88 @@
 // into a panel: a panel shows the thing, the footer says what it means, and `aria-live` reads the change
 // out. That rule is what stops "it is nearby" from becoming a reason to move something.
 import { isolate } from './annotate.ts';
+import { annotationProblem, difference, recomposedPixels, type Draft } from './save.ts';
 import { unpack, type SetView, type SheetView } from './import.ts';
 import { NOTHING } from '../format/semantic.ts';
 import { t } from './i18n.ts';
+
+/** What panel 1 is showing: the art, what the FILE gives back, or where the two disagree. */
+export type View = 'original' | 'recomposed' | 'difference';
 
 export interface Selection {
   set: SetView;
   sheet: SheetView;
   /** Which canonical index is singled out in panel 1, or `null` for the true picture. */
   isolated: number | null;
+  view: View;
 }
 
 const SCALE = 4; // 📌 The Dev asked for 4× by name: it is what makes a 16-pixel tile readable to a person.
 
-/** Draw one sheet at 4×, with one colour singled out if the person asked for that. */
-export function paintArt(canvas: HTMLCanvasElement, selection: Selection): void {
-  const { sheet, set, isolated } = selection;
-  const rgba = isolate(set.order, sheet.grid, isolated);
+/**
+ * What panel 1 should draw right now, or the reason it cannot.
+ *
+ * 🔴 `recomposed` goes the LONG way round on purpose — the annotation is written to text, read back, and
+ * rebuilt from the harvested palette. Recomposing the objects already in memory would prove nothing about
+ * the file, and the file is the deliverable.
+ */
+export function artPixels(selection: Selection, draft: Draft): { rgba: Uint8Array } | { problem: string } {
+  const { set, sheet, isolated, view } = selection;
+  if (view === 'original') return { rgba: isolate(set.order, sheet.grid, isolated) };
 
-  canvas.width = sheet.image.width;
-  canvas.height = sheet.image.height;
-  canvas.style.width = `${sheet.image.width * SCALE}px`;
-  canvas.style.height = `${sheet.image.height * SCALE}px`;
+  const problem = annotationProblem(draft);
+  if (problem) return { problem };
 
-  const ctx = canvas.getContext('2d')!;
-  ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), sheet.image.width, sheet.image.height), 0, 0);
+  const back = recomposedPixels(draft, sheet.name);
+  if (view === 'recomposed') return { rgba: back };
+  return { rgba: difference(back, sheet.image.rgba).pixels };
+}
+
+/** Put pixels on a canvas at 4×, scaling with CSS so every pixel stays a square. */
+export function paintArt(canvas: HTMLCanvasElement, sheet: SheetView, rgba: Uint8Array): void {
+  const { width, height } = sheet.image;
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.width = `${width * SCALE}px`;
+  canvas.style.height = `${height * SCALE}px`;
+  canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
+}
+
+/**
+ * PANEL 3 — the other sheets that share this palette, which is the set one semantic file covers.
+ *
+ * 📏 42 of these groups in the 197-file sample, covering 139 files, and every one of them semantically
+ * exact: the largest gathers four different subjects that share a palette because they share a MATERIAL.
+ */
+export function paintSet(host: HTMLElement, selection: Selection, onPick: (index: number) => void): void {
+  const list = document.createElement('ul');
+  list.className = 'thumbs';
+
+  selection.set.sheets.forEach((sheet, index) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'thumb';
+    if (sheet === selection.sheet) button.classList.add('is-current');
+    button.setAttribute('aria-current', String(sheet === selection.sheet));
+
+    const canvas = document.createElement('canvas');
+    paintArt(canvas, sheet, isolate(selection.set.order, sheet.grid, null));
+    // A thumbnail is a thumbnail: the 4× belongs to panel 1, and here the sheet has to fit in a strip.
+    canvas.style.width = '';
+    canvas.style.height = '';
+
+    const name = document.createElement('span');
+    name.className = 'thumb-name';
+    name.textContent = sheet.name;
+
+    button.append(canvas, name);
+    button.addEventListener('click', () => onPick(index));
+    item.append(button);
+    list.append(item);
+  });
+
+  host.replaceChildren(list);
 }
 
 const swatchStyle = (colour: number): string => {
@@ -125,6 +182,7 @@ export function explain(selection: Selection | null, refused: number): string {
     `${t('explain.sheets')}: ${set.sheets.length}`,
   ];
   if (isolated !== null) parts.push(`${t('explain.isolated')}: ${hex(set.order[isolated]!)}`);
+  if (selection.view !== 'original') parts.push(t(`view.${selection.view}`));
   if (refused > 0) parts.push(`${t('explain.refused')}: ${refused}`);
   return parts.join(' · ');
 }
