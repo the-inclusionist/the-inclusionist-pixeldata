@@ -22,6 +22,12 @@ What does work, and is proved rather than claimed:
 - **The page shell**, in the three zones the project mandates, with every string translatable from the first
   one (pt-BR · en · es). Opening a PNG reports its size, colour type, unique colours, pixels with partial
   alpha and any colour-management chunks.
+- **The two groupings** (`src/group/group.ts`), which are what make the whole thing pay for itself. Each file
+  is reduced to two exact summaries — one over its grid of colour indices, one over its set of colours — and
+  those two comparisons are what panels 3 and 4 will read, with no tolerance and no parameter anywhere.
+  📏 Run over the 197 CC0 files of [`docs/MEASUREMENT.md`](docs/MEASUREMENT.md) it reproduces that
+  measurement exactly — **34 «same drawing» groups covering 100 files, 42 «same palette» groups covering
+  139** — from a second implementation written afterwards from tests, which is why the figures are trusted.
 
 The scaffold sentence that used to stand here — *"this has not been built"* — was removed by the commit that
 made it false, which is the rule that put it there
@@ -43,11 +49,6 @@ so until it exists, the door is described and shut.
 
 ## What comes next
 
-- **The two groupings** (`src/group/`), which are what make the whole thing pay for itself. Each file is
-  reduced to two exact summaries — one over its grid of colour indices, one over its set of colours — and
-  those two comparisons fill panels 3 and 4 with no tolerance and no parameter anywhere.
-  📏 Measured on 197 CC0 files: **34 groups of «same drawing, different palettes» cover 119 files**, so
-  thirty-four annotations would cover a hundred and nineteen images.
 - **`docs/FORMAT.md`** — the written specification of `<set>.semantic.json` and `<name>.palette.json`, plus
   `fixtures/` to go with it. It is the contract: the engine writes its own reader against it, and nothing
   else holds the two implementations together.

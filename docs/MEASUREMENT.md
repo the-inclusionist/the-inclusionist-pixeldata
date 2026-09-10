@@ -50,19 +50,26 @@ colour**, and it travels in the palette ramp beside R, G and B. A shadow becomes
 
 ## 3 · The two groupings, on real art
 
-| grouping | groups found | what it covers |
+| grouping | groups of more than one | files covered |
 |---|---|---|
-| **same drawing, different palettes** (panel 4) | **34** | 119 files — every troop and building × 4 team colours, buttons, ribbons × 3 |
-| **same palette, different drawings** (panel 3) | **7** | e.g. `Wood_Tower_InConstruction` + `Castle_Construction` + `Tower_Construction` + `Bridge_All` |
+| **same drawing, different palettes** (panel 4) | **34** | **100** — every troop and building × 4 team colours, buttons, ribbons × 3 |
+| **same palette, different drawings** (panel 3) | **42** | **139** — a faction's castle and tower, an archer with and without arms, all the scaffolding |
 
-🎯 **Panel 4 is confirmed on real art and it is not marginal: 34 annotations would cover 119 files.**
+🎯 **Both panels are confirmed on real art, and neither is marginal.** Thirty-four annotations would cover a
+hundred files through panel 4 alone, and the palette grouping the file boundary rests on fires on more than
+two thirds of the pack.
 
-⚠️ **Panel 3 is rare in this pack, and that is a finding about the file boundary.** In this art each unit
-carries its own palette, so «one file per same-palette set» degenerates to roughly one file per image. It is
-not wrong — the seven groups it does find are semantically exact, all of them shared *materials* (scaffolding
-and wood) rather than shared subjects. But the grouping that pays for itself here is the drawing one, not the
-palette one, and the LPC (where `walk`/`thrust`/`hurt` of one body share a palette) is the case that has to
-justify the boundary.
+📌 **Every palette group is semantically exact**, which is the part that could not have been assumed: the
+largest one is `Wood_Tower_InConstruction` + `Castle_Construction` + `Tower_Construction` + `Bridge_All` —
+four different subjects that share a palette because they share a *material*. Colour identity turns out to
+track material identity in art drawn by one hand.
+
+⚠️ **These numbers replace two wrong ones**, and how each went wrong is worth keeping. «119 files covered»
+was never computed — the measuring script printed the groups without summing them, and the figure was read
+off the list by eye. «7 palette groups» was a `head -60` truncating the output at a boundary that made the
+short list look complete. Two independent implementations — the throwaway measuring script and
+`src/group/group.ts`, written afterwards from tests — now agree exactly on 34 / 100 / 42, which is what
+makes the corrected figures worth more than the originals ever were.
 
 ## 4 · Colour counts
 
