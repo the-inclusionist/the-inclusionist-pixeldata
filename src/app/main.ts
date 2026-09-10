@@ -16,7 +16,7 @@ import {
   buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT,
   type Draft, type OutputFile,
 } from './save.ts';
-import { collectPngFiles, collectFromInput, type Collected, type DirectoryLike } from './folder.ts';
+import { collectPngFiles, collectFromInput, collectFromDrop, type Collected, type DirectoryLike } from './folder.ts';
 import type { Provenance } from '../format/semantic.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -236,6 +236,27 @@ function start(): void {
       await take(await collectFromInput(Array.from((event.currentTarget as HTMLInputElement).files ?? [])));
     });
   }
+
+  // 🎯 ARRASTAR E SOLTAR. A folder dropped on the page arrives as a directory HANDLE, which is the shape
+  // `collectPngFiles` already walks — `dataTransfer.files` would flatten it to nothing and look like the
+  // page had ignored the drop.
+  const drop = $('drop');
+  for (const name of ['dragenter', 'dragover'] as const) {
+    drop.addEventListener(name, (event) => {
+      event.preventDefault();
+      drop.classList.add('is-over');
+    });
+  }
+  for (const name of ['dragleave', 'drop'] as const) {
+    drop.addEventListener(name, () => drop.classList.remove('is-over'));
+  }
+  drop.addEventListener('drop', async (event) => {
+    event.preventDefault();
+    // ⚠️ READ THE ITEMS BEFORE AWAITING ANYTHING. `DataTransfer` is emptied the moment this handler yields,
+    // so a single `await` placed above this line loses every item, silently and with an empty result.
+    const items = Array.from((event as DragEvent).dataTransfer?.items ?? []);
+    await take(await collectFromDrop(items));
+  });
 
   $('views').addEventListener('change', (event) => {
     if (!selection) return;

@@ -6,7 +6,7 @@
 // walk plain objects. That is the same division every module in `src/app/` keeps: the browser adds the
 // picker and nothing else, and everything the picker hands over is proved here.
 import { describe, it, expect } from 'vitest';
-import { collectPngFiles, type DirectoryLike, type FileLike } from '../src/app/folder.ts';
+import { collectPngFiles, collectFromDrop, type DirectoryLike, type FileLike } from '../src/app/folder.ts';
 
 const file = (name: string, byte = 1): FileLike => ({
   kind: 'file',
@@ -76,5 +76,49 @@ describe('collectPngFiles', () => {
 
   it('Zero: an empty folder gives no files and no complaint', async () => {
     expect(await collectPngFiles(dir('empty', []))).toEqual({ files: [], capped: false });
+  });
+});
+
+describe('🔴 collectFromDrop — what a drop carries, and it is not simply files', () => {
+  const handleFor = (h: FileLike | DirectoryLike | null): DataTransferItem =>
+    ({ kind: 'file', getAsFileSystemHandle: async () => h }) as unknown as DataTransferItem;
+
+  it('🎯 Right: a dropped FOLDER is walked, not flattened to nothing', async () => {
+    // `dataTransfer.files` holds no entry at all for a dropped directory. Reading that instead would look,
+    // to the person, exactly like the page ignoring them.
+    const root = dir('pack', [dir('Blue', [file('walk.png')]), file('cover.png')]);
+    const { files } = await collectFromDrop([handleFor(root)]);
+    // Sorted by name within the folder, so `Blue` precedes `cover.png` — the opposite way round from the
+    // case above, where `cover.png` preceded `Warrior`. The rule is a plain locale sort, not folders-first.
+    expect(files.map((f) => f.name)).toEqual(['pack/Blue/walk.png', 'pack/cover.png']);
+  });
+
+  it('Right: dropped FILES come through on their own names', async () => {
+    const { files } = await collectFromDrop([handleFor(file('a.png')), handleFor(file('notes.txt'))]);
+    expect(files.map((f) => f.name)).toEqual(['a.png']);
+  });
+
+  it('Right: a folder and loose files together are one import', async () => {
+    const { files } = await collectFromDrop([handleFor(dir('p', [file('in.png')])), handleFor(file('out.png'))]);
+    expect(files.map((f) => f.name).sort()).toEqual(['out.png', 'p/in.png']);
+  });
+
+  it('Boundary: an item that gives no handle is skipped rather than crashing the drop', async () => {
+    // A browser without `getAsFileSystemHandle`, or a drop carrying something that is not a file at all.
+    const { files } = await collectFromDrop([handleFor(null), handleFor(file('a.png'))]);
+    expect(files).toHaveLength(1);
+  });
+
+  it('🔴 Boundary: the cap holds across a folder and the files beside it, and is reported', async () => {
+    const { files, capped } = await collectFromDrop(
+      [handleFor(dir('p', [file('a.png'), file('b.png')])), handleFor(file('c.png'))],
+      2,
+    );
+    expect(files).toHaveLength(2);
+    expect(capped).toBe(true);
+  });
+
+  it('Zero: an empty drop gives nothing and no complaint', async () => {
+    expect(await collectFromDrop([])).toEqual({ files: [], capped: false });
   });
 });

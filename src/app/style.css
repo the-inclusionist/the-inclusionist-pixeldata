@@ -231,3 +231,8 @@ body {
 /* A position this palette cannot reach is drawn as a gap, never as a colour it does not have. */
 .chip:not([style]) { background: repeating-linear-gradient(45deg, #333 0 3px, #1b2136 3px 6px); }
 .colour.is-unreachable { opacity: 0.5; }
+
+/* ---- the drop area ---- */
+.import { border: 1px dashed transparent; border-radius: 8px; padding: 0.4rem; transition: border-color .12s; }
+.import.is-over { border-color: var(--accent); background: #0f1424; }
+.drop-hint { font-style: italic; }

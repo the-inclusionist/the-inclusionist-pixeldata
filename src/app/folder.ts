@@ -95,3 +95,40 @@ export async function collectFromInput(list: readonly File[], limit = 2000): Pro
     capped: usable.length > limit,
   };
 }
+
+/**
+ * WHAT A DROP CARRIES, and it is not simply files.
+ *
+ * 🎯 A folder dragged onto the page arrives as a `DataTransferItem` whose `getAsFileSystemHandle()` gives a
+ * DIRECTORY handle — the same shape `collectPngFiles` already walks. A plain `event.dataTransfer.files`
+ * would flatten a dropped folder to nothing at all, which is the behaviour a person reads as "it ignored me".
+ *
+ * ⚠️ THE ITEM LIST MUST BE READ SYNCHRONOUSLY. `DataTransfer` is emptied the moment the drop handler yields,
+ * so awaiting anything before collecting the items loses them — with no error, and no items.
+ */
+export async function collectFromDrop(items: readonly DataTransferItem[], limit = 2000): Promise<Collected> {
+  const handles = await Promise.all(
+    items
+      .filter((item) => item.kind === 'file')
+      .map((item) => {
+        const get = (item as { getAsFileSystemHandle?: () => Promise<FileLike | DirectoryLike | null> }).getAsFileSystemHandle;
+        return get ? get.call(item) : Promise.resolve(null);
+      }),
+  );
+
+  const files: Found[] = [];
+  let capped = false;
+  for (const handle of handles) {
+    if (!handle || capped) continue;
+    if (handle.kind === 'directory') {
+      const inside = await collectPngFiles(handle, limit - files.length);
+      files.push(...inside.files.map((f) => ({ ...f, name: `${handle.name}/${f.name}` })));
+      capped ||= inside.capped;
+      continue;
+    }
+    if (!isPixelArt(handle.name)) continue;
+    if (files.length >= limit) { capped = true; break; }
+    files.push({ name: handle.name, bytes: new Uint8Array(await (await handle.getFile()).arrayBuffer()) });
+  }
+  return { files, capped };
+}
