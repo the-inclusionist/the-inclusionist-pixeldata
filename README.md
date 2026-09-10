@@ -36,6 +36,12 @@ What does work, and is proved rather than claimed:
   and «difference» lights up where the two disagree, so an empty panel is the proof.
   📏 Verified over the same 197 files: **41 512 960 pixels compared and 197 of 197 identical**, plus
   **218 palette harvests, all exact, over 107 118 592 recoloured pixels**.
+- **Opening a folder**, which is where the batch lives — a picker used one selection at a time is not a
+  batch however many files a person shift-clicks. It walks every folder inside, keeps the path so two
+  `walk.png` stay two files, skips the macOS resource forks a real pack is full of, and says so out loud
+  when it stops at its limit.
+  📏 Pointed at the real CC0 pack it finds **197 PNGs, refuses none, and groups them into the same 100 sets**
+  the measurement found.
 
 The scaffold sentence that used to stand here — *"this has not been built"* — was removed by the commit that
 made it false, which is the rule that put it there
@@ -57,8 +63,6 @@ so until it exists, the door is described and shut.
 
 ## What comes next
 
-- **Opening a folder at once**, rather than a file picker one selection at a time. It is the last thing
-  standing between the tool and a real asset pack.
 - **`fixtures/`** — reference files the engine's future reader must reproduce exactly. `docs/FORMAT.md` is
   the contract; the fixtures are what makes it checkable from the other side.
 - **The axe gate** in `.github/workflows/ci.yml`, which stays `false` until somebody has watched it pass.

@@ -9,6 +9,7 @@ import { importFiles, type Imported, type SetView } from './import.ts';
 import { artPixels, paintArt, paintColours, paintSet, paintVariants, explain, type Selection, type View } from './panels.ts';
 import { variantsFor, harvestFromVariant, variantName, type Variant } from './variants.ts';
 import { buildOutputs, defaultSetName, annotationProblem, type Draft, type OutputFile } from './save.ts';
+import { collectPngFiles, collectFromInput, type Collected, type DirectoryLike } from './folder.ts';
 import type { Palette, Provenance } from '../format/semantic.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -158,6 +159,18 @@ function select(setIndex: number, sheetIndex: number): void {
   $<HTMLSelectElement>('sheet').value = `${setIndex}:${sheetIndex}`;
 }
 
+/** Everything that follows opening files or a folder, so both routes land in exactly the same place. */
+async function take(collected: Collected): Promise<void> {
+  imported = await importFiles(collected.files);
+  harvested.clear();
+  notice = collected.capped
+    ? `${t('import.capped')} ${collected.files.length}`
+    : collected.files.length === 0 ? t('import.none') : '';
+  fillChooser();
+  select(0, 0);
+  render();
+}
+
 function addRegion(name: string): void {
   if (!selection || !name.trim()) return;
   const ids = Object.keys(selection.set.regionNames).map(Number);
@@ -225,17 +238,31 @@ function start(): void {
   });
 
   $<HTMLInputElement>('files').addEventListener('change', async (event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const chosen = Array.from(input.files ?? []);
-    imported = await importFiles(
-      await Promise.all(chosen.map(async (file) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }))),
-    );
-    notice = '';
-    harvested.clear();
-    fillChooser();
-    select(0, 0);
-    render();
+    const chosen = Array.from((event.currentTarget as HTMLInputElement).files ?? []);
+    await take({
+      files: await Promise.all(chosen.map(async (file) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }))),
+      capped: false,
+    });
   });
+
+  // 🎯 THE BATCH. A picker used one selection at a time is not a batch however many files a person
+  // shift-clicks; pointing at a folder and getting every sheet in it grouped and counted is.
+  const folderPicker = (globalThis as { showDirectoryPicker?: () => Promise<DirectoryLike> }).showDirectoryPicker;
+  if (folderPicker) {
+    $<HTMLButtonElement>('open-folder').addEventListener('click', async () => {
+      let root: DirectoryLike;
+      try { root = await folderPicker.call(globalThis); } catch { return; } // closed the picker; not an error
+      await take(await collectPngFiles(root));
+    });
+  } else {
+    // ⚠️ The fallback is SHOWN and the real button hidden, rather than both being present. Two buttons that
+    // do the same thing on a browser that only supports one of them is a way to have half of them fail.
+    $('open-folder').hidden = true;
+    $('folder-fallback').hidden = false;
+    $<HTMLInputElement>('folder-input').addEventListener('change', async (event) => {
+      await take(await collectFromInput(Array.from((event.currentTarget as HTMLInputElement).files ?? [])));
+    });
+  }
 
   $<HTMLSelectElement>('sheet').addEventListener('change', (event) => {
     const [s, i] = (event.currentTarget as HTMLSelectElement).value.split(':').map(Number);

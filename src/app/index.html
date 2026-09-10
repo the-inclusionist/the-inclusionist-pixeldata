@@ -33,8 +33,13 @@
 
 <main class="zone-work" data-i18n-label="zone.work">
   <div class="import">
-    <label class="btn" for="files" data-i18n="import.label"></label>
-    <input id="files" type="file" accept="image/png" multiple hidden>
+    <div class="import-buttons">
+      <label class="btn" for="files" data-i18n="import.label"></label>
+      <input id="files" type="file" accept="image/png" multiple hidden>
+      <button id="open-folder" class="btn" type="button" data-i18n="import.folder"></button>
+      <label class="btn" for="folder-input" id="folder-fallback" data-i18n="import.folder" hidden></label>
+      <input id="folder-input" type="file" webkitdirectory multiple hidden>
+    </div>
     <p class="hint" data-i18n="import.hint"></p>
     <div id="refused"></div>
   </div>

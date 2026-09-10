@@ -16,6 +16,15 @@
 
 * { box-sizing: border-box; }
 
+/*
+  🔴 THE `hidden` ATTRIBUTE HAS TO WIN, and without this line it loses.
+  The browser's own `[hidden] { display: none }` is a low-specificity rule, so ANY author rule that sets
+  `display` on the same element beats it — `.views { display: flex }` left the view switcher on screen while
+  the JavaScript believed it had hidden it. There is no error and no warning: just a panel that will not go
+  away. One rule, and every future `el.hidden = true` behaves.
+*/
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -198,3 +207,5 @@ body {
 
 /* A variant already harvested is marked, because clicking again REMOVES it and that has to be visible. */
 .thumb.is-taken { border-color: #7fe0a0; color: #7fe0a0; }
+
+.import-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
