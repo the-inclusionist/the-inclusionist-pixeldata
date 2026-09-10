@@ -48,10 +48,6 @@
     <section class="panel panel--art" aria-labelledby="h-art">
       <div class="panel-head">
         <h2 id="h-art" data-i18n="panel.art"></h2>
-        <label class="sheet-pick">
-          <span data-i18n="sheet.label"></span>
-          <select id="sheet" hidden></select>
-        </label>
         <fieldset id="views" class="views" hidden>
           <legend class="visually-hidden" data-i18n="view.legend"></legend>
           <label><input type="radio" name="view" value="original" checked><span data-i18n="view.original"></span></label>
@@ -60,6 +56,16 @@
         </fieldset>
       </div>
       <div class="body stage"><canvas id="art-canvas" hidden></canvas><p id="art-problem" class="problem" hidden></p></div>
+    </section>
+
+    <section class="panel panel--drawings" aria-labelledby="h-drawings">
+      <h2 id="h-drawings" data-i18n="panel.uniqueImages"></h2>
+      <div id="drawings" class="body"></div>
+    </section>
+
+    <section class="panel panel--palettes" aria-labelledby="h-palettes">
+      <h2 id="h-palettes" data-i18n="panel.palettesFound"></h2>
+      <div id="palettes" class="body"></div>
     </section>
 
     <section class="panel panel--colors" aria-labelledby="h-colors">
@@ -71,11 +77,6 @@
         </span>
       </div>
       <div id="colours" class="body"></div>
-    </section>
-
-    <section class="panel panel--set" aria-labelledby="h-set">
-      <h2 id="h-set" data-i18n="panel.samePalette"></h2>
-      <div id="set" class="body"></div>
     </section>
 
     <section class="panel panel--save" id="save-panel" aria-labelledby="h-save" hidden>
@@ -94,11 +95,6 @@
         </label>
         <button id="save" type="button" data-i18n="save.action"></button>
       </div>
-    </section>
-
-    <section class="panel panel--variants" aria-labelledby="h-variants">
-      <h2 id="h-variants" data-i18n="panel.sameDrawing"></h2>
-      <div id="variants" class="body"></div>
     </section>
   </div>
 </main>

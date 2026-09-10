@@ -30,14 +30,17 @@ const alphaOf = (colour: number): number => (colour === NOTHING ? 0 : colour & 0
  * cannot be shown an altered version of it; the contrast comes from everything else going grey, which is
  * what makes the chosen one stand out.
  */
-export function isolate(order: readonly number[], grid: Int32Array, chosen: number | null): Uint8Array {
+export function isolate(order: readonly (number | undefined)[], grid: Int32Array, chosen: number | null): Uint8Array {
   if (chosen !== null && (chosen < 0 || chosen >= order.length)) {
     throw new Error(`index ${chosen} is not in an order of ${order.length} colours`);
   }
   const rgba = new Uint8Array(grid.length * 4);
   for (let i = 0; i < grid.length; i++) {
-    const colour = order[grid[i]!]!;
-    if (colour === NOTHING) continue; // already zeroed
+    const colour = order[grid[i]!];
+    // ⚠️ `undefined` is a position the CURRENT palette cannot reach, not a bug: another palette may simply
+    // not show that colour anywhere the two share a drawing. It draws as nothing, and the count of them is
+    // reported beside the panel — filling it with a nearby colour would be a lie with no symptom.
+    if (colour === undefined || colour === NOTHING) continue; // already zeroed
     const d = i * 4;
     if (chosen === null || grid[i] === chosen) {
       rgba[d] = (colour >>> 24) & 0xff;

@@ -209,3 +209,25 @@ body {
 .thumb.is-taken { border-color: #7fe0a0; color: #7fe0a0; }
 
 .import-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* ---- panel 2: the badge that says how many palettes hold this drawing ---- */
+.thumb { position: relative; }
+.badge {
+  position: absolute; top: 0.2rem; right: 0.2rem;
+  min-width: 1.15rem; height: 1.15rem;
+  display: grid; place-items: center;
+  padding: 0 0.25rem; border-radius: 999px;
+  background: var(--accent); color: #12161f;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+/* ---- panel 3: a palette is recognised by its colours, not by its name ---- */
+.thumb--palette { min-width: 7rem; }
+.strip { display: flex; flex-wrap: wrap; gap: 2px; max-width: 7rem; }
+.chip {
+  width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid #0006;
+  background: var(--swatch, transparent);
+}
+/* A position this palette cannot reach is drawn as a gap, never as a colour it does not have. */
+.chip:not([style]) { background: repeating-linear-gradient(45deg, #333 0 3px, #1b2136 3px 6px); }
+.colour.is-unreachable { opacity: 0.5; }

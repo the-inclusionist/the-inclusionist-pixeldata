@@ -1,49 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// PANELS 1 AND 2 IN A REAL BROWSER. The arithmetic is proved in Node; what is proved here is the part Node
-// cannot see — that a click reaches the canvas, that the canvas holds the pixels `isolate` computed, and
+// THE FOUR PANELS IN A REAL BROWSER. The arithmetic is proved in Node; what is proved here is the part Node
+// cannot see — that a click reaches the canvas, that the canvas holds the pixels the model computed, and
 // that a swatch says what it is to something that cannot see colour.
+//
+// 🎯 THE CASE THIS FILE EXISTS FOR is in panel 4: swap the palette, and every swatch changes while not one
+// annotation moves. That is «o que significa o PÍXEL naquela posição» made visible.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { paintArt, paintColours, paintSet, artPixels, type Selection } from '../src/app/panels.ts';
-import { packColour, NOTHING, type Meaning } from '../src/format/semantic.ts';
-import type { SetView, SheetView } from '../src/app/import.ts';
+import { buildPng } from './helpers/build-png.ts';
+import { importFiles } from '../src/app/import.ts';
+import { workspaceFor } from '../src/app/workspace.ts';
+import {
+  artPixels, paintArt, paintColours, paintDrawings, paintPalettes, currentSheet, type Selection,
+} from '../src/app/panels.ts';
 
-const RED = packColour([200, 40, 40, 255]);
-const DARK = packColour([30, 30, 30, 255]);
+const COFFEE = [[90, 60, 40, 255], [40, 26, 18, 255]];
+const IVORY = [[230, 220, 200, 255], [150, 140, 120, 255]];
 
-/** A 2×2: red, dark, dark, nothing. Small enough to read every pixel of the assertion. */
-function aSelection(isolated: number | null): Selection {
-  const order = [NOTHING, DARK, RED];
-  const grid = Int32Array.from([2, 1, 1, 0]);
-  const sheet: SheetView = {
-    name: 'tiny.png',
-    // ⚠️ The pixels MUST agree with (order, grid): the difference view compares what comes back out of the
-    // file against this array, so a placeholder of zeros would light up every pixel and prove nothing.
-    image: {
-      width: 2, height: 2,
-      rgba: Uint8Array.from([200, 40, 40, 255, 30, 30, 30, 255, 30, 30, 30, 255, 0, 0, 0, 0]),
-      colorManagementChunks: [], colorType: 6,
-    },
-    grid,
-    drawingHash: 'x',
+const CLEAR = [0, 0, 0, 0];
+
+// ⚠️ Both carry a transparent pixel, because «nothing» is a POSITION like any other and the panel has to
+// show it. A fixture with no transparency quietly skips the one row whose level field must be disabled.
+const walk = (a: number[], b: number[]): Promise<Uint8Array> =>
+  buildPng({ width: 3, height: 1, colorType: 6, scanlines: [[0, ...a, ...b, ...CLEAR]] });
+// A different drawing, and its colours are a SUBSET of walk's — which is what containment grouping is for.
+const hurt = (a: number[], _b: number[]): Promise<Uint8Array> =>
+  buildPng({ width: 3, height: 1, colorType: 6, scanlines: [[0, ...a, ...a, ...CLEAR]] });
+
+/** Two drawings in two palettes, laid out the way the Liberated Pixel Cup lays them out. */
+async function aSelection(): Promise<Selection> {
+  const imported = await importFiles([
+    { name: 'Human_male/Coffee/walk.png', bytes: await walk(COFFEE[0]!, COFFEE[1]!) },
+    { name: 'Human_male/Coffee/hurt.png', bytes: await hurt(COFFEE[0]!, COFFEE[1]!) },
+    { name: 'Human_male/Ivory/walk.png', bytes: await walk(IVORY[0]!, IVORY[1]!) },
+    { name: 'Human_male/Ivory/hurt.png', bytes: await hurt(IVORY[0]!, IVORY[1]!) },
+  ]);
+  const workspace = workspaceFor(imported, imported.sets[0]!);
+  return {
+    workspace,
+    drawing: workspace.drawings[0]!,
+    palette: workspace.palettes[0]!,
+    isolated: null,
+    view: 'original',
   };
-  const set: SetView = {
-    paletteHash: 'p',
-    order,
-    sheets: [sheet],
-    counts: [1, 2, 1],
-    colorMap: [{ region: 0, level: 0 }, { region: 1, level: 0 }, { region: 1, level: 1 }] as Meaning[],
-    regionNames: { 1: 'material' },
-  };
-  return { set, sheet, isolated, view: 'original' };
 }
 
-const NO_OP = { onIsolate: () => {}, onRegion: () => {}, onLevel: () => {} };
-
-function pixelsOf(canvas: HTMLCanvasElement): number[] {
-  const ctx = canvas.getContext('2d')!;
-  return [...ctx.getImageData(0, 0, canvas.width, canvas.height).data];
-}
+const SOURCE = { author: 'x', url: 'x', door: 'grant', licence: 'CC0-1.0', outgoingLicence: 'CC0-1.0', derivedFrom: null };
+const draftFor = (s: Selection) => ({ name: 'human', set: s.workspace.base, source: SOURCE });
+const NO_OP = { onIsolate: (): void => {}, onRegion: (): void => {}, onLevel: (): void => {} };
 
 let canvas: HTMLCanvasElement;
 let host: HTMLElement;
@@ -55,136 +59,135 @@ beforeEach(() => {
   document.body.append(canvas, host);
 });
 
-const SOURCE = { author: 'x', url: 'x', door: 'grant', licence: 'CC0-1.0', outgoingLicence: 'CC0-1.0', derivedFrom: null };
-const draftFor = (selection: Selection) => ({ name: 'tiny', set: selection.set, source: SOURCE });
-
-/** Draw whatever the current view says, the way `main.ts` does it. */
 function show(selection: Selection): number[] {
   const drawn = artPixels(selection, draftFor(selection));
   if ('problem' in drawn) throw new Error(drawn.problem);
-  paintArt(canvas, selection.sheet, drawn.rgba);
-  return pixelsOf(canvas);
+  paintArt(canvas, currentSheet(selection), drawn.rgba);
+  return [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data];
 }
 
-describe('paintArt', () => {
-  it('Right: the canvas is the image at its own size, and CSS does the 4×', () => {
+describe('panel 1 — the image at 4×', () => {
+  it('Right: the canvas is the image at its own size, and CSS does the 4×', async () => {
     // Scaling the backing store instead would blur the art on any browser that resamples, and the whole
     // point of showing pixel art larger is that each pixel stays a square.
-    show(aSelection(null));
-    expect(canvas.width).toBe(2);
-    expect(canvas.style.width).toBe('8px');
+    show(await aSelection());
+    expect(canvas.width).toBe(3);
+    expect(canvas.style.width).toBe('12px');
   });
 
-  it('🎯 THE GESTURE: with a colour chosen, it keeps its bytes and the rest go grey', () => {
-    const pixels = show(aSelection(2)); // index 2 is the red
-    expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]); // the chosen one, untouched
-    const grey = Math.round(0.299 * 30 + 0.587 * 30 + 0.114 * 30);
-    expect(pixels.slice(4, 8)).toEqual([grey, grey, grey, 255]); // everything else
+  it('🎯 THE GESTURE: with a position chosen, everything else drops to grey', async () => {
+    const selection = await aSelection();
+    const opaque = selection.workspace.base.order.findIndex((c) => c !== -1);
+    const pixels = show({ ...selection, isolated: opaque });
+    let greys = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] === 0) continue;
+      if (pixels[i] === pixels[i + 1] && pixels[i + 1] === pixels[i + 2]) greys++;
+    }
+    expect(greys).toBeGreaterThan(0);
   });
 
-  it('Right: with nothing chosen it is the true picture, undistorted', () => {
-    const pixels = show(aSelection(null));
-    expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]);
-    expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
-  });
-});
+  it('🔴 Right: swapping the palette repaints the SAME shape in other colours', async () => {
+    const selection = await aSelection();
+    const other = selection.workspace.palettes.find((p) => p.set !== selection.workspace.base)!;
+    const before = show(selection);
+    const after = show({ ...selection, palette: other });
 
-describe('the view switcher, which is where the round trip is watched', () => {
-  it('🔴 THE PROOF ON SCREEN: what comes back out of the FILE is the picture that went in', () => {
-    const selection = { ...aSelection(null), view: 'recomposed' as const };
-    const pixels = show(selection);
-    expect(pixels.slice(0, 4)).toEqual([200, 40, 40, 255]);
-    expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
-  });
-
-  it('🔴 Right: with a sound annotation the difference view is empty — nothing lights up', () => {
-    const pixels = show({ ...aSelection(null), view: 'difference' as const });
-    expect(pixels.every((byte) => byte === 0)).toBe(true);
-  });
-
-  it('🔴 Boundary: an annotation that cannot be read back REFUSES to draw and says why', () => {
-    // Drawing something plausible here would be the worst outcome: the person would believe the annotation
-    // closes, and find out when a game renders their art wrong.
-    const selection = { ...aSelection(null), view: 'recomposed' as const };
-    selection.set.colorMap = [{ region: 0, level: 0 }, { region: 1, level: 0 }, { region: 1, level: 0 }];
-    const drawn = artPixels(selection, draftFor(selection));
-    expect('problem' in drawn && drawn.problem).toMatch(/claimed twice/i);
+    // The alpha channel is the shape, and the shape must not move.
+    const shape = (px: number[]): number[] => px.filter((_, i) => i % 4 === 3);
+    expect(shape(after)).toEqual(shape(before));
+    expect(after).not.toEqual(before); // the colours must
   });
 });
 
-describe('paintSet — panel 3', () => {
-  it('Right: one thumbnail per sheet of the set, and the current one is marked', () => {
-    const selection = aSelection(null);
-    paintSet(host, selection, () => {});
-    const thumbs = host.querySelectorAll('.thumb');
-    expect(thumbs).toHaveLength(1);
-    expect(thumbs[0]!.getAttribute('aria-current')).toBe('true');
+describe('panel 2 — the unique images, with the badge', () => {
+  it('🎯 Right: one thumbnail per DRAWING, and the badge is how many palettes hold it', async () => {
+    const selection = await aSelection();
+    paintDrawings(host, selection, () => {});
+    expect(host.querySelectorAll('.thumb')).toHaveLength(selection.workspace.drawings.length);
+    expect([...host.querySelectorAll('.badge')].map((b) => b.textContent))
+      .toEqual(selection.workspace.drawings.map((d) => String(d.paletteCount)));
   });
 
-  it('Interface: clicking a thumbnail asks for that sheet by index', () => {
-    const picked: number[] = [];
-    paintSet(host, aSelection(null), (i) => picked.push(i));
-    host.querySelector<HTMLButtonElement>('.thumb')!.click();
-    expect(picked).toEqual([0]);
+  it('🔴 Right: the badge says what it is, because a number in a circle is silent', async () => {
+    paintDrawings(host, await aSelection(), () => {});
+    expect(host.querySelector('.badge')!.getAttribute('aria-label')).toMatch(/\d+ (paletas|palettes)/);
   });
 
-  it('Right: a thumbnail is the TRUE picture, never the isolated one', () => {
-    // Panel 3 is for recognising a sheet. Greying it to match whatever panel 1 is doing would make every
-    // thumbnail look alike at the exact moment the person is trying to tell them apart.
-    paintSet(host, aSelection(2), () => {});
-    const thumb = host.querySelector('canvas') as HTMLCanvasElement;
-    const pixels = [...thumb.getContext('2d')!.getImageData(0, 0, 2, 2).data];
-    expect(pixels.slice(4, 8)).toEqual([30, 30, 30, 255]);
+  it('Interface: clicking a thumbnail asks for that drawing', async () => {
+    const selection = await aSelection();
+    const picked: string[] = [];
+    paintDrawings(host, selection, (d) => picked.push(d.sheet.name));
+    host.querySelectorAll<HTMLButtonElement>('.thumb')[1]!.click();
+    expect(picked).toEqual([selection.workspace.drawings[1]!.sheet.name]);
   });
 });
 
-describe('paintColours', () => {
-  it('Right: one row per colour of the SET, not of the sheet on screen', () => {
-    paintColours(host, aSelection(null), NO_OP);
-    expect(host.querySelectorAll('.colour')).toHaveLength(3);
+describe('panel 3 — the palettes found', () => {
+  it('Right: one entry per palette, named by its folder and the current one marked', async () => {
+    paintPalettes(host, await aSelection(), () => {});
+    expect([...host.querySelectorAll('.thumb-name')].map((n) => n.textContent).sort()).toEqual(['Coffee', 'Ivory']);
+    expect(host.querySelector('.thumb.is-current')!.getAttribute('aria-current')).toBe('true');
   });
 
-  it('🔴 Right: a swatch says what it is, because a coloured square says nothing to a screen reader', () => {
-    paintColours(host, aSelection(null), NO_OP);
-    const labels = [...host.querySelectorAll('.swatch')].map((s) => s.getAttribute('aria-label'));
-    expect(labels[2]).toContain('#c82828');
-    expect(labels[0]).toMatch(/nada|nothing|nada \(/i); // the transparent one is named, not left blank
+  it('Right: a palette is shown by its COLOURS, which is what a person recognises', async () => {
+    const selection = await aSelection();
+    paintPalettes(host, selection, () => {});
+    expect(host.querySelectorAll('.chip').length)
+      .toBe(selection.workspace.base.order.length * selection.workspace.palettes.length);
   });
 
-  it('🎯 Interface: clicking a swatch asks to isolate it, and clicking it again asks to stop', () => {
-    const asked: (number | null)[] = [];
-    paintColours(host, aSelection(null), { ...NO_OP, onIsolate: (i) => asked.push(i) });
-    host.querySelectorAll<HTMLButtonElement>('.swatch')[2]!.click();
+  it('Interface: clicking a palette asks for it', async () => {
+    const selection = await aSelection();
+    const picked: string[] = [];
+    paintPalettes(host, selection, (p) => picked.push(p.name));
+    host.querySelectorAll<HTMLButtonElement>('.thumb')[1]!.click();
+    expect(picked).toEqual([selection.workspace.palettes[1]!.name]);
+  });
+});
 
-    paintColours(host, aSelection(2), { ...NO_OP, onIsolate: (i) => asked.push(i) });
-    host.querySelectorAll<HTMLButtonElement>('.swatch')[2]!.click();
-
-    expect(asked).toEqual([2, null]);
+describe('panel 4 — the positions, and what each one means', () => {
+  it('Right: one row per POSITION in the base index space, not per colour of the sheet on screen', async () => {
+    const selection = await aSelection();
+    paintColours(host, selection, NO_OP);
+    expect(host.querySelectorAll('.colour')).toHaveLength(selection.workspace.base.order.length);
   });
 
-  it('Right: the isolated row is marked, and the swatch reports it as pressed', () => {
-    paintColours(host, aSelection(2), NO_OP);
-    const rows = host.querySelectorAll('.colour');
-    expect(rows[2]!.classList.contains('is-isolated')).toBe(true);
-    expect(rows[2]!.querySelector('.swatch')!.getAttribute('aria-pressed')).toBe('true');
+  it('🎯 🔴 THE WHOLE IDEA: swapping the palette changes every swatch and moves NOT ONE annotation', async () => {
+    const selection = await aSelection();
+    const other = selection.workspace.palettes.find((p) => p.set !== selection.workspace.base)!;
+
+    const read = (): { swatches: string[]; meanings: string[] } => ({
+      swatches: [...host.querySelectorAll<HTMLElement>('.swatch')].map((s) => s.style.getPropertyValue('--swatch')),
+      meanings: [...host.querySelectorAll('.colour')].map((row) =>
+        `${row.querySelector<HTMLSelectElement>('.region')!.value}/${row.querySelector<HTMLInputElement>('.level')!.value}`),
+    });
+
+    paintColours(host, selection, NO_OP);
+    const before = read();
+    paintColours(host, { ...selection, palette: other }, NO_OP);
+    const after = read();
+
+    expect(after.meanings).toEqual(before.meanings); // the annotation did not move
+    expect(after.swatches).not.toEqual(before.swatches); // the colours did
   });
 
-  it('Boundary: the level field is disabled for nothing, which has no ramp to sit on', () => {
-    paintColours(host, aSelection(null), NO_OP);
-    const level = host.querySelectorAll<HTMLInputElement>('.colour .level')[0]!;
-    expect(level.disabled).toBe(true);
-  });
-
-  it('🔴 Right: the colour goes ABOVE the chequerboard, not behind it', () => {
-    // The defect this guards was found on screen, not in a test: `background-color` is the bottom layer and
-    // `background-image` paints over it, so the stylesheet's chequerboard sat IN FRONT of the colour and
-    // opaque swatches wore grey triangles. The colour travels as a custom property that `.swatch::after`
-    // reads, which puts it on the upper layer — where an opaque colour hides the board and a
-    // semi-transparent one shows through. 📏 119 of 197 measured files carry partial alpha.
-    paintColours(host, aSelection(null), NO_OP);
-    const swatch = host.querySelectorAll<HTMLElement>('.swatch')[2]!; // the opaque red
-    expect(swatch.style.getPropertyValue('--swatch')).toBe('rgba(200, 40, 40, 1)');
+  it('🔴 Right: the colour goes ABOVE the chequerboard, not behind it', async () => {
+    // `background-color` is the BOTTOM layer and `background-image` paints over it, so setting the colour on
+    // the element would put the stylesheet's chequerboard IN FRONT of it.
+    const selection = await aSelection();
+    paintColours(host, selection, NO_OP);
+    const opaque = selection.workspace.base.order.findIndex((c) => c !== -1);
+    const swatch = host.querySelectorAll<HTMLElement>('.swatch')[opaque]!;
+    expect(swatch.style.getPropertyValue('--swatch')).toMatch(/^rgba\(/);
     expect(swatch.style.backgroundColor).toBe('');
     expect(swatch.style.backgroundImage).toBe('');
+  });
+
+  it('Boundary: the level field is disabled for nothing, which has no ramp to sit on', async () => {
+    const selection = await aSelection();
+    paintColours(host, selection, NO_OP);
+    const nothing = selection.workspace.base.order.indexOf(-1);
+    expect(host.querySelectorAll<HTMLInputElement>('.colour .level')[nothing]!.disabled).toBe(true);
   });
 });

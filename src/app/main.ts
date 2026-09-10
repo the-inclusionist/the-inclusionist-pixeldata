@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The wiring, and nothing else. Decoding is in `src/png/`, grouping in `src/group/`, the format in
-// `src/format/`, the arithmetic of the panels in `annotate.ts`, what comes out in `save.ts`, and the drawing
-// in `panels.ts` — every one of those is proved without a browser. What is left here is what only a browser
-// can do: read a file the person chose, hand a click back, and write a file where they say.
+// `src/format/`, the two views in `workspace.ts`, the arithmetic of the panels in `annotate.ts`, what comes
+// out in `save.ts`, and the drawing in `panels.ts` — every one of those is proved without a browser. What is
+// left here is what only a browser can do: read a file the person chose, hand a click back, and write a file
+// where they say.
 import { applyTranslations, setLanguage, t, LANGUAGES, type Language } from './i18n.ts';
 import { importFiles, type Imported, type SetView } from './import.ts';
-import { artPixels, paintArt, paintColours, paintSet, paintVariants, explain, type Selection, type View } from './panels.ts';
-import { variantsFor, harvestFromVariant, variantName, type Variant } from './variants.ts';
-import { buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT, type Draft, type OutputFile } from './save.ts';
+import {
+  artPixels, paintArt, paintColours, paintDrawings, paintPalettes, explain, currentSheet,
+  type Selection, type View,
+} from './panels.ts';
+import { workspaceFor } from './workspace.ts';
+import {
+  buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT,
+  type Draft, type OutputFile,
+} from './save.ts';
 import { collectPngFiles, collectFromInput, type Collected, type DirectoryLike } from './folder.ts';
-import type { Palette, Provenance } from '../format/semantic.ts';
+import type { Provenance } from '../format/semantic.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -21,8 +28,6 @@ function isLanguage(value: string): value is Language {
 let imported: Imported = { sets: [], refused: [] };
 let selection: Selection | null = null;
 let notice = '';
-/** Palettes harvested in panel 4, per set. They ride along into the one palette file the set writes. */
-const harvested = new Map<SetView, { palette: Palette; from: string }[]>();
 
 function provenance(): Provenance {
   return {
@@ -35,40 +40,20 @@ function provenance(): Provenance {
   };
 }
 
+/**
+ * ⚠️ THE DRAFT IS ALWAYS AGAINST THE BASE PALETTE, whichever palette is on screen. The annotation lives in
+ * ONE index space; the palette showing only decides which colours those positions are currently wearing.
+ */
 const draftOf = (set: SetView): Draft => ({
   name: $<HTMLInputElement>('set-name').value || 'set',
   set,
   source: provenance(),
-  harvested: (harvested.get(set) ?? []).map((h) => h.palette),
 });
 
-/**
- * ⚠️ HARVESTING IS A TOGGLE. Clicking a variant that is already taken removes it, because a variant added by
- * mistake would otherwise be stuck in the palette file with no way to take it out but starting over.
- */
-function harvest(variant: Variant): void {
-  if (!selection) return;
-  const set = selection.set;
-  const taken = harvested.get(set) ?? [];
-  const already = taken.findIndex((h) => h.from === variant.name);
-  if (already >= 0) {
-    taken.splice(already, 1);
-    harvested.set(set, taken);
-    notice = '';
-    render();
-    return;
-  }
-  try {
-    const name = variantName($<HTMLInputElement>('set-name').value || 'set', variant.name);
-    const { palette, missing } = harvestFromVariant(set, variant, name);
-    taken.push({ palette, from: variant.name });
-    harvested.set(set, taken);
-    notice = missing.length === 0
-      ? `${t('harvest.done')} ${name}`
-      : `${t('harvest.partial')} ${name} (${missing.length})`;
-  } catch (error) {
-    notice = error instanceof Error ? error.message : String(error);
-  }
+const meaningAt = (index: number): { region: number; level: number } => selection!.workspace.base.colorMap[index]!;
+
+function setMeaning(index: number, meaning: { region: number; level: number }): void {
+  selection!.workspace.base.colorMap[index] = meaning;
   render();
 }
 
@@ -76,20 +61,16 @@ function harvest(variant: Variant): void {
 function render(): void {
   const canvas = $<HTMLCanvasElement>('art-canvas');
   const problem = $('art-problem');
-  const chooser = $<HTMLSelectElement>('sheet');
-  const views = $('views');
-  const savePanel = $('save-panel');
 
-  for (const el of [chooser, views, savePanel]) el.hidden = selection === null;
+  for (const el of [$('views'), $('save-panel')]) el.hidden = selection === null;
 
+  let unreachable = 0;
   if (!selection) {
     canvas.hidden = true;
     problem.hidden = true;
-    $('colours').replaceChildren();
-    $('set').replaceChildren();
-    $('variants').replaceChildren();
+    for (const id of ['colours', 'drawings', 'palettes']) $(id).replaceChildren();
   } else {
-    const drawn = artPixels(selection, draftOf(selection.set));
+    const drawn = artPixels(selection, draftOf(selection.workspace.base));
     if ('problem' in drawn) {
       canvas.hidden = true;
       problem.hidden = false;
@@ -100,30 +81,25 @@ function render(): void {
       // the next time something reads the DOM instead of the screen.
       problem.textContent = '';
       canvas.hidden = false;
-      paintArt(canvas, selection.sheet, drawn.rgba);
+      unreachable = drawn.unreachable;
+      paintArt(canvas, currentSheet(selection), drawn.rgba);
     }
 
+    paintDrawings($('drawings'), selection, (drawing) => { selection!.drawing = drawing; render(); });
+    paintPalettes($('palettes'), selection, (palette) => { selection!.palette = palette; render(); });
     paintColours($('colours'), selection, {
       onIsolate: (index) => { selection!.isolated = index; render(); },
-      onRegion: (index, region) => { selection!.set.colorMap[index] = { region, level: selection!.set.colorMap[index]!.level }; render(); },
-      onLevel: (index, level) => { selection!.set.colorMap[index] = { region: selection!.set.colorMap[index]!.region, level }; render(); },
+      onRegion: (index, region) => setMeaning(index, { region, level: meaningAt(index).level }),
+      onLevel: (index, level) => setMeaning(index, { region: meaningAt(index).region, level }),
     });
-    paintSet($('set'), selection, (index) => { select(imported.sets.indexOf(selection!.set), index); render(); });
-    paintVariants(
-      $('variants'),
-      variantsFor(imported, selection.set),
-      new Set((harvested.get(selection.set) ?? []).map((h) => h.from)),
-      harvest,
-    );
   }
 
   // ⚠️ A WARNING, NEVER A GATE. A ramp that does not climb is probably two levels swapped — the art would
-  // recolour with its shading inverted, which looks wrong and does not fail. But a FLAT ramp is legitimate,
-  // so refusing here would reject correct work.
-  const rough = selection ? nonMonotonicRamps(toPalette(draftOf(selection.set)), SOURCE_VARIANT) : [];
+  // recolour with its shading inverted, which looks wrong and does not fail. But a FLAT ramp is legitimate.
+  const rough = selection ? nonMonotonicRamps(toPalette(draftOf(selection.workspace.base)), SOURCE_VARIANT) : [];
   const warning = rough.length > 0 ? ` ⚠️ ${t('ramp.warning')} ${rough.length}` : '';
   const tail = notice || t('state.notWired');
-  $('explain').textContent = `${explain(selection, imported.refused.length)} — ${tail}${warning}`;
+  $('explain').textContent = `${explain(selection, imported.refused.length, unreachable)} — ${tail}${warning}`;
   renderRefusals();
 }
 
@@ -141,45 +117,31 @@ function renderRefusals(): void {
   host.replaceChildren(list);
 }
 
-/** Every sheet of every set, so panel 1 can be pointed anywhere without leaving the set panel. */
-function fillChooser(): void {
-  const chooser = $<HTMLSelectElement>('sheet');
-  chooser.replaceChildren();
-  imported.sets.forEach((set, s) => {
-    set.sheets.forEach((sheet, i) => {
-      const option = document.createElement('option');
-      option.value = `${s}:${i}`;
-      option.textContent = imported.sets.length > 1 ? `${sheet.name} (${s + 1})` : sheet.name;
-      chooser.append(option);
-    });
-  });
-}
+/**
+ * Open the workspace around the palette holding the most positions.
+ *
+ * 📌 The widest is the right base rather than the first: the annotation lives in its index space, so the
+ * more positions it has the fewer palettes come back carrying something the correspondence cannot reach.
+ * Taking whichever set came first would make the tool's usefulness depend on file-system order.
+ */
+function openWorkspace(): void {
+  const base = imported.sets.reduce<SetView | null>(
+    (widest, set) => (widest === null || set.order.length > widest.order.length ? set : widest),
+    null,
+  );
+  if (!base) { selection = null; return; }
 
-function select(setIndex: number, sheetIndex: number): void {
-  const set = imported.sets[setIndex] as SetView | undefined;
-  const sheet = set?.sheets[sheetIndex];
-  const view = selection?.view ?? 'original';
-  selection = set && sheet ? { set, sheet, isolated: null, view } : null;
-  if (set) $<HTMLInputElement>('set-name').value = defaultSetName(set.sheets.map((s) => s.name));
-  $<HTMLSelectElement>('sheet').value = `${setIndex}:${sheetIndex}`;
-}
-
-/** Everything that follows opening files or a folder, so both routes land in exactly the same place. */
-async function take(collected: Collected): Promise<void> {
-  imported = await importFiles(collected.files);
-  harvested.clear();
-  notice = collected.capped
-    ? `${t('import.capped')} ${collected.files.length}`
-    : collected.files.length === 0 ? t('import.none') : '';
-  fillChooser();
-  select(0, 0);
-  render();
+  const workspace = workspaceFor(imported, base);
+  const drawing = workspace.drawings[0];
+  const palette = workspace.palettes.find((p) => p.set === base) ?? workspace.palettes[0];
+  selection = drawing && palette ? { workspace, drawing, palette, isolated: null, view: 'original' } : null;
+  $<HTMLInputElement>('set-name').value = defaultSetName(base.sheets.map((s) => s.name));
 }
 
 function addRegion(name: string): void {
   if (!selection || !name.trim()) return;
-  const ids = Object.keys(selection.set.regionNames).map(Number);
-  selection.set.regionNames[Math.max(0, ...ids) + 1] = name.trim();
+  const names = selection.workspace.base.regionNames;
+  names[Math.max(0, ...Object.keys(names).map(Number)) + 1] = name.trim();
   render();
 }
 
@@ -189,7 +151,7 @@ function addRegion(name: string): void {
  */
 async function save(): Promise<void> {
   if (!selection) return;
-  const draft = draftOf(selection.set);
+  const draft = draftOf(selection.workspace.base);
   const problem = annotationProblem(draft);
   if (problem) {
     notice = `${t('save.blocked')} ${problem}`;
@@ -232,6 +194,16 @@ async function write(files: readonly OutputFile[]): Promise<boolean> {
   return true;
 }
 
+/** Everything that follows opening files or a folder, so every route lands in exactly the same place. */
+async function take(collected: Collected): Promise<void> {
+  imported = await importFiles(collected.files);
+  notice = collected.capped
+    ? `${t('import.capped')} ${collected.files.length}`
+    : collected.files.length === 0 ? t('import.none') : '';
+  openWorkspace();
+  render();
+}
+
 function start(): void {
   const languageChooser = $<HTMLSelectElement>('lang');
   languageChooser.addEventListener('change', () => {
@@ -268,12 +240,6 @@ function start(): void {
       await take(await collectFromInput(Array.from((event.currentTarget as HTMLInputElement).files ?? [])));
     });
   }
-
-  $<HTMLSelectElement>('sheet').addEventListener('change', (event) => {
-    const [s, i] = (event.currentTarget as HTMLSelectElement).value.split(':').map(Number);
-    select(s!, i!);
-    render();
-  });
 
   $('views').addEventListener('change', (event) => {
     if (!selection) return;

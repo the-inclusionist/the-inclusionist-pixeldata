@@ -1,48 +1,65 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// PANELS 1 AND 2 IN THE DOM. The arithmetic lives in `annotate.ts` and is proved in Node; this file only
-// puts it on screen and takes clicks back.
+// THE FOUR PANELS IN THE DOM. The arithmetic lives in `annotate.ts` and `workspace.ts` and is proved in
+// Node; this file only puts it on screen and takes clicks back.
+//
+// 🎯 THE SENTENCE THE LAYOUT SERVES: «este software não é pra definir o que significa a COR, mas o que
+// significa o PÍXEL naquela posição». So panel 4 lists POSITIONS, not colours — swapping the palette in
+// panel 3 changes every swatch and moves not one annotation.
 //
 // ⚠️ THE EXPLANATION GOES TO THE FOOTER AND STAYS THERE (CLAUDE.md, by Gestalt). Nothing here writes prose
-// into a panel: a panel shows the thing, the footer says what it means, and `aria-live` reads the change
-// out. That rule is what stops "it is nearby" from becoming a reason to move something.
+// into a panel: a panel shows the thing, the footer says what it means, and `aria-live` reads the change out.
 import { isolate } from './annotate.ts';
 import { annotationProblem, difference, recomposedPixels, type Draft } from './save.ts';
-import { unpack, type SetView, type SheetView } from './import.ts';
-import type { Variant } from './variants.ts';
+import { unpack, type SheetView } from './import.ts';
+import { paletteColours, sheetIn, type Workspace, type PaletteView, type DrawingView } from './workspace.ts';
 import { NOTHING } from '../format/semantic.ts';
 import { t } from './i18n.ts';
 
-/** What panel 1 is showing: the art, what the FILE gives back, or where the two disagree. */
+/** What panel 1 is showing: the annotated art, what the FILE gives back, or where the two disagree. */
 export type View = 'original' | 'recomposed' | 'difference';
 
 export interface Selection {
-  set: SetView;
-  sheet: SheetView;
-  /** Which canonical index is singled out in panel 1, or `null` for the true picture. */
+  workspace: Workspace;
+  drawing: DrawingView;
+  palette: PaletteView;
+  /** A position in the BASE palette's index space, singled out in panel 1 — or `null` for the whole picture. */
   isolated: number | null;
   view: View;
 }
 
 const SCALE = 4; // 📌 The Dev asked for 4× by name: it is what makes a 16-pixel tile readable to a person.
 
+/** The file that is this drawing wearing this palette, when that palette holds it. */
+export const currentSheet = (selection: Selection): SheetView =>
+  sheetIn(selection.palette, selection.drawing) ?? selection.drawing.sheet;
+
 /**
- * What panel 1 should draw right now, or the reason it cannot.
+ * 🔴 PANEL 1 ALWAYS DRAWS THE BASE DRAWING'S GRID WEARING THE CURRENT PALETTE'S COLOURS, and that is the
+ * decision that keeps everything else simple: `isolated` is a position in ONE index space no matter which
+ * palette is on screen, so a click in panel 4 means the same thing before and after a swap.
  *
- * 🔴 `recomposed` goes the LONG way round on purpose — the annotation is written to text, read back, and
- * rebuilt from the harvested palette. Recomposing the objects already in memory would prove nothing about
- * the file, and the file is the deliverable.
+ * Drawing the chosen file's own pixels instead would need a second index space per palette, and the two
+ * would have to be kept in step by hand — exactly the class of mistake that has no symptom.
  */
-export function artPixels(selection: Selection, draft: Draft): { rgba: Uint8Array } | { problem: string } {
-  const { set, sheet, isolated, view } = selection;
-  if (view === 'original') return { rgba: isolate(set.order, sheet.grid, isolated) };
+export function artPixels(
+  selection: Selection,
+  draft: Draft,
+): { rgba: Uint8Array; unreachable: number } | { problem: string } {
+  const { workspace, drawing, palette, isolated, view } = selection;
+  const colours = paletteColours(workspace, palette);
+  const unreachable = colours.filter((c) => c === undefined).length;
+
+  if (view === 'original') return { rgba: isolate(colours, drawing.sheet.grid, isolated), unreachable };
 
   const problem = annotationProblem(draft);
   if (problem) return { problem };
 
-  const back = recomposedPixels(draft, sheet.name);
-  if (view === 'recomposed') return { rgba: back };
-  return { rgba: difference(back, sheet.image.rgba).pixels };
+  const back = recomposedPixels(draft, drawing.sheet.name);
+  if (view === 'recomposed') return { rgba: back, unreachable };
+  // The difference is against the FILE that palette actually holds — which is what proves the
+  // correspondence, now ACROSS palettes rather than only within one.
+  return { rgba: difference(back, currentSheet(selection).image.rgba).pixels, unreachable };
 }
 
 /** Put pixels on a canvas at 4×, scaling with CSS so every pixel stays a square. */
@@ -55,82 +72,89 @@ export function paintArt(canvas: HTMLCanvasElement, sheet: SheetView, rgba: Uint
   canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
 }
 
+function thumbnail(sheet: SheetView, colours: readonly (number | undefined)[]): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  paintArt(canvas, sheet, isolate(colours, sheet.grid, null));
+  // A thumbnail is a thumbnail: the 4× belongs to panel 1, and here a sheet has to fit in a strip.
+  canvas.style.width = '';
+  canvas.style.height = '';
+  return canvas;
+}
+
 /**
- * PANEL 3 — the other sheets that share this palette, which is the set one semantic file covers.
+ * PANEL 2 — the unique images, one per DRAWING, each badged with how many palettes hold it.
  *
- * 📏 42 of these groups in the 197-file sample, covering 139 files, and every one of them semantically
- * exact: the largest gathers four different subjects that share a palette because they share a MATERIAL.
+ * 📏 The badge is the fact the Liberated Pixel Cup hides: `Body/Base/Human_male/` looks like eight sheets in
+ * eight palettes and it is not. `walk.png` is FOUR different drawings across those folders and `idle.png` is
+ * two, at two different dimensions. A badge reading 3 is telling the truth.
  */
-export function paintSet(host: HTMLElement, selection: Selection, onPick: (index: number) => void): void {
+export function paintDrawings(host: HTMLElement, selection: Selection, onPick: (drawing: DrawingView) => void): void {
+  const colours = paletteColours(selection.workspace, selection.palette);
   const list = document.createElement('ul');
   list.className = 'thumbs';
 
-  selection.set.sheets.forEach((sheet, index) => {
+  for (const drawing of selection.workspace.drawings) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'thumb';
-    if (sheet === selection.sheet) button.classList.add('is-current');
-    button.setAttribute('aria-current', String(sheet === selection.sheet));
-
-    const canvas = document.createElement('canvas');
-    paintArt(canvas, sheet, isolate(selection.set.order, sheet.grid, null));
-    // A thumbnail is a thumbnail: the 4× belongs to panel 1, and here the sheet has to fit in a strip.
-    canvas.style.width = '';
-    canvas.style.height = '';
+    const current = drawing.sheet.drawingHash === selection.drawing.sheet.drawingHash;
+    if (current) button.classList.add('is-current');
+    button.setAttribute('aria-current', String(current));
 
     const name = document.createElement('span');
     name.className = 'thumb-name';
-    name.textContent = sheet.name;
+    name.textContent = drawing.sheet.name.split('/').pop() ?? drawing.sheet.name;
 
-    button.append(canvas, name);
-    button.addEventListener('click', () => onPick(index));
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = String(drawing.paletteCount);
+    // A number in a circle says nothing on its own to something that cannot see it.
+    badge.setAttribute('aria-label', `${drawing.paletteCount} ${t('badge.palettes')}`);
+
+    button.append(thumbnail(drawing.sheet, colours), name, badge);
+    button.addEventListener('click', () => onPick(drawing));
     item.append(button);
     list.append(item);
-  });
-
+  }
   host.replaceChildren(list);
 }
 
 /**
- * PANEL 4 — the same drawing wearing other palettes, and the button that harvests one.
+ * PANEL 3 — the palettes found, and swapping between them is the whole point.
  *
- * 🎯 This is the panel that pays for the tool. 📏 34 groups of these in the 197-file sample covering 100
- * files: every troop and building in four team colours. One annotation, ninety-nine readings.
+ * 🎯 A swap changes every swatch in panel 4 and every colour in panel 1, and moves NOT ONE annotation. That
+ * is what «what the pixel at that position means» buys: the meaning was never attached to a colour.
  */
-export function paintVariants(
-  host: HTMLElement,
-  variants: readonly Variant[],
-  taken: ReadonlySet<string>,
-  onHarvest: (variant: Variant) => void,
-): void {
-  if (variants.length === 0) { host.replaceChildren(); return; }
+export function paintPalettes(host: HTMLElement, selection: Selection, onPick: (palette: PaletteView) => void): void {
   const list = document.createElement('ul');
   list.className = 'thumbs';
 
-  for (const variant of variants) {
+  for (const palette of selection.workspace.palettes) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'thumb';
-    const already = taken.has(variant.name);
-    if (already) button.classList.add('is-taken');
-    button.setAttribute('aria-pressed', String(already));
+    button.className = 'thumb thumb--palette';
+    const current = palette === selection.palette;
+    if (current) button.classList.add('is-current');
+    button.setAttribute('aria-current', String(current));
 
-    const canvas = document.createElement('canvas');
-    // The variant is drawn from its OWN pixels: the person is choosing between colours, so showing them
-    // through this set's palette would show them the thing they are trying to tell apart, twice.
-    const rgba = new Uint8Array(variant.image.rgba);
-    canvas.width = variant.image.width;
-    canvas.height = variant.image.height;
-    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), variant.image.width, variant.image.height), 0, 0);
+    // The strip of colours IS the palette, and it is more recognisable than any name.
+    const strip = document.createElement('span');
+    strip.className = 'strip';
+    for (const colour of paletteColours(selection.workspace, palette)) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      if (colour !== undefined) chip.style.setProperty('--swatch', swatchStyle(colour));
+      strip.append(chip);
+    }
 
     const name = document.createElement('span');
     name.className = 'thumb-name';
-    name.textContent = already ? `✓ ${variant.name}` : variant.name;
+    name.textContent = palette.name;
 
-    button.append(canvas, name);
-    button.addEventListener('click', () => onHarvest(variant));
+    button.append(strip, name);
+    button.addEventListener('click', () => onPick(palette));
     item.append(button);
     list.append(item);
   }
@@ -149,45 +173,50 @@ export interface ColourRowHandlers {
 }
 
 /**
- * One row per colour of the set: a swatch that isolates it, how many pixels wear it, and the two fields that
- * say what it means.
+ * PANEL 4 — one row per POSITION in the base palette's index space, wearing the current palette's colour.
  *
- * 📏 This is the table the whole tool exists to make short — a median measured file has 7 rows and the worst
- * has 35. The person does not paint; they decide seven times.
+ * 🔴 THIS IS WHERE THE IDEA IS VISIBLE. The swatch changes when the palette changes; the region and the
+ * level do not, because they were never about the colour. 📏 A median measured file has 7 positions and the
+ * worst in the LPC has 253 — the person decides once, for every palette at once.
  */
 export function paintColours(host: HTMLElement, selection: Selection, handlers: ColourRowHandlers): void {
-  const { set, isolated } = selection;
+  const { workspace, palette, isolated } = selection;
+  const base = workspace.base;
+  const colours = paletteColours(workspace, palette);
   const list = document.createElement('ul');
   list.className = 'colours';
 
-  set.order.forEach((colour, index) => {
-    const meaning = set.colorMap[index]!;
+  base.order.forEach((_, index) => {
+    const meaning = base.colorMap[index]!;
+    const colour = colours[index];
     const row = document.createElement('li');
     row.className = 'colour';
     if (index === isolated) row.classList.add('is-isolated');
+    if (colour === undefined) row.classList.add('is-unreachable');
 
     const swatch = document.createElement('button');
     swatch.type = 'button';
     swatch.className = 'swatch';
     // 🔴 A CUSTOM PROPERTY, read by `.swatch::after`, and NOT `backgroundColor` on the element.
     // `background-color` is the BOTTOM layer in CSS and `background-image` paints over it, so the
-    // chequerboard the stylesheet uses as a backdrop would sit IN FRONT of the colour — opaque swatches came
-    // out wearing grey triangles. The pseudo-element puts the colour above the board, which is what lets an
-    // opaque colour hide it and a semi-transparent one show through. 📏 119 of 197 measured files.
-    swatch.style.setProperty('--swatch', swatchStyle(colour));
+    // chequerboard the stylesheet uses as a backdrop would sit IN FRONT of the colour.
+    if (colour !== undefined) swatch.style.setProperty('--swatch', swatchStyle(colour));
     swatch.setAttribute('aria-pressed', String(index === isolated));
-    // The label carries the colour and the count, because a coloured square says nothing to a screen reader.
-    swatch.setAttribute('aria-label', `${colour === NOTHING ? t('colour.nothing') : hex(colour)} · ${set.counts[index]}`);
+    swatch.setAttribute('aria-label', `${describe(colour)} · ${base.counts[index]}`);
     swatch.addEventListener('click', () => handlers.onIsolate(index === isolated ? null : index));
 
     const count = document.createElement('span');
     count.className = 'count';
-    count.textContent = String(set.counts[index]);
+    count.textContent = String(base.counts[index]);
 
     const region = document.createElement('select');
     region.className = 'region';
     region.setAttribute('aria-label', t('row.region'));
-    for (const [id, name] of [[0, t('region.nothing')] as const, ...Object.entries(set.regionNames).map(([k, v]) => [Number(k), v] as const)]) {
+    const options: readonly (readonly [number, string])[] = [
+      [0, t('region.nothing')],
+      ...Object.entries(base.regionNames).map(([k, v]) => [Number(k), v] as const),
+    ];
+    for (const [id, name] of options) {
       const option = document.createElement('option');
       option.value = String(id);
       option.textContent = name;
@@ -212,6 +241,9 @@ export function paintColours(host: HTMLElement, selection: Selection, handlers: 
   host.replaceChildren(list);
 }
 
+const describe = (colour: number | undefined): string =>
+  colour === undefined ? t('colour.unreachable') : colour === NOTHING ? t('colour.nothing') : hex(colour);
+
 const hex = (colour: number): string => {
   const [r, g, b, a] = unpack(colour);
   const pair = (n: number): string => n.toString(16).padStart(2, '0');
@@ -219,15 +251,21 @@ const hex = (colour: number): string => {
 };
 
 /** What the footer says right now. It is the only place prose is allowed to live. */
-export function explain(selection: Selection | null, refused: number): string {
+export function explain(selection: Selection | null, refused: number, unreachable: number): string {
   if (!selection) return t('state.empty');
-  const { set, sheet, isolated } = selection;
+  const { workspace, drawing, palette, isolated } = selection;
+  const sheet = currentSheet(selection);
   const parts = [
-    `${sheet.name} · ${sheet.image.width}×${sheet.image.height}`,
-    `${t('explain.colours')}: ${set.order.length}`,
-    `${t('explain.sheets')}: ${set.sheets.length}`,
+    `${drawing.sheet.name.split('/').pop()} · ${sheet.image.width}×${sheet.image.height}`,
+    `${t('explain.palette')}: ${palette.name}`,
+    `${t('explain.images')}: ${workspace.drawings.length}`,
+    `${t('explain.palettes')}: ${workspace.palettes.length}`,
+    `${t('explain.positions')}: ${workspace.base.order.length}`,
   ];
-  if (isolated !== null) parts.push(`${t('explain.isolated')}: ${hex(set.order[isolated]!)}`);
+  if (isolated !== null) {
+    parts.push(`${t('explain.isolated')}: ${describe(paletteColours(workspace, palette)[isolated])}`);
+  }
+  if (unreachable > 0) parts.push(`⚠️ ${t('explain.unreachable')}: ${unreachable}`);
   if (selection.view !== 'original') parts.push(t(`view.${selection.view}`));
   if (refused > 0) parts.push(`${t('explain.refused')}: ${refused}`);
   return parts.join(' · ');
