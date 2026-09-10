@@ -1,9 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # The format
 
-Two kinds of file. A **set file** describes what a group of sheets is made of; a **palette file** says what
-colour each part wears. They are apart so that one palette can serve several sets and one set can wear
-several palettes.
+**One file per set**, holding the pixels and the colours together (ADR-0135). A set is the sheets that share
+a palette; the file describes what each pixel IS, and every palette that art was found wearing.
 
 🔴 **This page is a contract, not documentation of an implementation.** The engine will write its own reader
 against it (ADR-0134), and nothing else holds the two implementations together. If the format moves, this
@@ -13,13 +12,10 @@ page moves in the same commit.
 
 ## `<set>.semantic.json`
 
-One file per **set** — the sheets that share a palette.
-
 ```json
 {
-  "schema": 1,
-  "regions": { "1": "skin", "2": "shadow" },
-  "levels": { "1": { "steps": 4, "outline": 3 }, "2": { "steps": 1, "outline": null } },
+  "schema": 2,
+  "//": "Semantic pixel art: `grid` holds run-length rows of POSITION indices, `positions` says what each position means, and `palettes` gives the colours each meaning wears. A pixel is described by what it IS, never by what colour it happens to be.",
   "sheets": [
     {
       "name": "walk",
@@ -31,12 +27,18 @@ One file per **set** — the sheets that share a palette.
       ]
     }
   ],
-  "colorMap": [
-    { "region": 0, "level": 0 },
-    { "region": 1, "level": 0 },
-    { "region": 1, "level": 1 }
+  "positions": [
+    { "region": null,   "level": 0 },
+    { "region": "pele", "level": 0 },
+    { "region": "pele", "level": 1 }
   ],
-  "palettes": ["source", "coffee", "amber"],
+  "levels": {
+    "pele": { "steps": 2, "outline": null }
+  },
+  "palettes": {
+    "source": { "pele": ["#3b2418ff", "#9c6a4dff"] },
+    "Ivory":  { "pele": ["#4a2c14ff", "#bb8148ff"] }
+  },
   "source": {
     "author": "…", "url": "https://…", "door": "bridge",
     "licence": "CC-BY-SA-3.0", "outgoingLicence": "GPL-3.0-only", "derivedFrom": "…"
@@ -46,22 +48,41 @@ One file per **set** — the sheets that share a palette.
 
 | field | what it is |
 |---|---|
-| `regions` | the vocabulary **this set** invents — id → name. It is content, so it is never translated. |
-| `levels` | per region: how many steps its ramp has, and which step index is the outline (`null` if none). |
-| `sheets[].grid` | one string per row of pixels, runs written `<count>x<index>`. |
-| `colorMap` | indexed by canonical colour index: what that index MEANS. The record of the human decision. |
-| `palettes` | the variant NAMES the companion `<set>.palette.json` holds — `source` first, then each harvested one. |
-| `source` | the fields of `art/ATTRIBUTION.csv`, so the ledger is generated rather than written by hand. |
+| `//` | one sentence saying what the file is, because the first thing to open it may be a model with no other context |
+| `sheets[].grid` | one string per row of pixels, runs written `<count>x<position>` |
+| `positions` | indexed by the position a grid names: **what that position MEANS**. The record of the human decision |
+| `levels` | per region name: how many steps its ramp has, and which step is the outline (`null` if none) |
+| `palettes` | `palettes[name][region][level]` is a colour `#rrggbbaa`. Every palette this art was found wearing |
+| `source` | the fields of `art/ATTRIBUTION.csv`, so the ledger is generated rather than written by hand |
 
-### The index is the set's canonical order
+### A region is a WORD, and `null` is nothing
 
-🔴 **A reader must not invent its own numbering.** The index in `grid` is the position of a colour in the
+🔴 **`{"region": "pele", "level": 1}` answers in place.** There is no id and no lookup table: schema 1 kept a
+`regions` map and wrote numbers, which meant holding two structures at once to answer the one question the
+file exists to answer. The file is imported for a language model to read, and a join is where a reader goes
+wrong (ADR-0135).
+
+`region: null` is nothing at all — the hole in the picture. It is `null` rather than a word like «nothing»
+because a word could collide with one a person typed.
+
+⚠️ **The vocabulary belongs to the artwork.** «metal da fivela» is a legitimate region. Nothing validates the
+spelling, so two typings of one word are two regions and no check catches it.
+
+### One file, every palette
+
+🎯 **`palettes` holds all of them, not just the one that reproduces the source.** A game offering four team
+colours opens one thing. `source` is the palette that reproduces the original files exactly; the rest are
+harvested from other palettes of the same drawings.
+
+## The index is the set's canonical order
+
+🔴 **A reader must not invent its own numbering.** The number in `grid` is the position of a colour in the
 **set's canonical order: the union of every colour used by every sheet in the set, sorted ascending** as
 packed `0xRRGGBBAA`, with fully transparent sorting first.
 
 ⚠️ It is deliberately **not** first-appearance order. Within one set, `walk` and `hurt` meet their shared
-colours in different orders, so a first-appearance index would need a different `colorMap` per sheet — and
-one annotation could not cover the set, which is the whole reason a set exists.
+colours in different orders, so a first-appearance index would need a different `positions` list per
+sheet — and one annotation could not cover the set, which is the whole reason a set exists.
 
 📌 First-appearance order is used elsewhere, for a different question: it is how the tool decides whether
 two files are the *same drawing*. The two orderings answer different questions and must not be confused.
@@ -75,44 +96,36 @@ working-tree bytes only. A reader must **refuse** a row that does not add up rat
 
 ### Validation a reader owes
 
-- `schema` must be `1`. An unknown version is refused, not read hopefully.
-- Every region named in `colorMap` must exist in `regions`.
-- 🔴 **No two indices may claim the same `(region, level)`.** It makes a ramp ambiguous — two source colours
-  claiming one step — and recomposition would silently take whichever came last. This is the check with the
-  most teeth in the format.
-- Every index a grid uses must exist in `colorMap`.
-- Region `0` is **nothing** — a hole in the picture. It has no ramp and claims no level.
+- `schema` must be `2`. An unknown version is refused, not read hopefully — schema 1 and 2 disagree about
+  where a region's name lives, and there is no reading that half-works.
+- Every region named by a position must appear in `levels`.
+- 🔴 **No two positions may claim the same `(region, level)`.** It makes a ramp ambiguous — two source
+  colours claiming one step — and recomposition would silently take whichever came last. This is the check
+  with the most teeth in the format.
+- Every position a grid uses must be described in `positions`.
+- `region: null` is **nothing** — a hole in the picture. It has no ramp and claims no level.
 
 ---
 
-## `<name>.palette.json`
+## Choosing a palette
 
-```json
-{
-  "schema": 1,
-  "name": "human",
-  "regions": {
-    "1": {
-      "variants": {
-        "source": ["#3b2418ff", "#6b4530ff", "#9c6a4dff", "#140c08ff"],
-        "amber":  ["#4a2c14ff", "#82552cff", "#bb8148ff", "#1a0f06ff"]
-      }
-    },
-    "2": { "variants": { "source": ["#0000005a"], "amber": ["#0000005a"] } }
-  }
-}
+A reader is given a **choice**: either one palette name for everything, or a map from region name to palette
+name.
+
+```
+recompose(file, "walk", "Ivory")
+recompose(file, "walk", { "pele": "Ivory", "roupa": "source" })
 ```
 
-🎯 **One file per SET, not per variant.** The structure is already `region → variants → ramp`, so a variant
-is exactly what a variant entry is for; splitting it would leave a game loading four files to offer four
-team colours. Every harvested variant joins this file.
+⚠️ **THE CHOICE IS PER REGION, never for the whole resource.** «Light skin with a red shirt» is the ordinary
+thing a game asks for, and a single global name cannot express it — which would empty the palette dictionary
+of its purpose. A bare name is shorthand for «this one everywhere», and is chiefly useful for reproducing the
+source exactly.
 
-`regions[regionId].variants[variantName][level]` is a colour written `#rrggbbaa`.
-
-⚠️ **A variant is chosen PER REGION, never for the whole resource.** «Light skin with a red shirt» is the
-normal case, and a single global variant name cannot express it — which would empty the dictionary of its
-purpose. A reader takes a map from region id to variant name; a bare name is shorthand for «this one
-everywhere», and it is only really useful for reproducing the source.
+A reader must REFUSE, and say which, when: the chosen palette has no ramp for a region the sheet uses; the
+ramp has no entry at the level a position names; or a region the sheet uses was left out of the choice.
+Filling any of those with a nearby colour would put a colour the palette does not have into the art, and
+nothing downstream could tell.
 
 ### Alpha is part of the colour
 
@@ -133,7 +146,7 @@ of skin in that variant. No matching, no nearest-colour, nothing approximate.
 📏 Verified over the 197-file sample: **218 harvests, 218 exact, 107 118 592 pixels recoloured and compared**
 against the file each palette came from.
 
-⚠️ **THE TWO ORDERINGS MUST NOT BE CONFUSED.** `colorMap` is indexed by the set's CANONICAL order (its
+⚠️ **THE TWO ORDERINGS MUST NOT BE CONFUSED.** `positions` is indexed by the set's CANONICAL order (its
 colours, sorted). The correspondence between an annotated sheet and a variant runs through FIRST APPEARANCE.
 A reader that harvests must translate between them, and a reader that only recomposes never needs the second
 one at all.
@@ -146,7 +159,7 @@ as missing, never filled with a nearby colour.
 
 **Every visible pixel survives exactly.** 📏 Verified over the same 197 files: decode → canonical order →
 grid → write → read → recompose with the harvested palette, **41 512 960 pixels compared, 197 of 197 files
-identical**.
+identical**; and on the LPC, **1 117 299 008 pixels across 8 155 of 8 155 files**.
 
 ⚠️ **RGB stored underneath a fully transparent pixel is NOT preserved.** 📏 12 560 pixels in the sample carry
 one, and they come back as zeroes. This is a trade and not an oversight:
@@ -162,8 +175,8 @@ to be revisited rather than rediscovered.
 
 ## The fixtures, which are how this page is checked from the other side
 
-`fixtures/valid/` holds a small set worked out **by hand**: the semantic file, the palette, and the exact
-pixels each variant choice must produce — including the per-region case, which is the one a reader is most
+`fixtures/valid/` holds a small set worked out **by hand**: the file, and the exact
+pixels each palette choice must produce — including the per-region case, which is the one a reader is most
 likely to get wrong.
 
 🔴 **They were not generated by any reader.** A fixture produced by the implementation it checks proves only

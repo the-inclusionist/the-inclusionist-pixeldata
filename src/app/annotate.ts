@@ -61,9 +61,12 @@ export interface Proposal extends Meaning {
   readonly luminance: number;
 }
 
-/** Region 1 is the material a person will rename; region 2 is where semi-transparent colours land. */
-const MATERIAL = 1;
-const SEMI_TRANSPARENT = 2;
+/**
+ * The words the draft proposes. A person types over them — the region is free text, not a code from a list,
+ * because the file is written to be read by a language model as much as by a program.
+ */
+const MATERIAL = 'material';
+const SEMI_TRANSPARENT = 'shadow';
 
 /**
  * Propose a `colorMap`, index-aligned with the canonical order it is given.
@@ -81,7 +84,7 @@ export function suggest(order: readonly number[]): Proposal[] {
   const partial = rank(order.filter((c) => c !== NOTHING && alphaOf(c) !== 255));
 
   return order.map((colour) => {
-    if (colour === NOTHING) return { colour, luminance: -1, region: 0, level: 0 };
+    if (colour === NOTHING) return { colour, luminance: -1, region: null, level: 0 };
     const asOpaque = opaque.get(colour);
     return asOpaque !== undefined
       ? { colour, luminance: luminance(colour), region: MATERIAL, level: asOpaque }

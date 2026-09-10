@@ -28,9 +28,7 @@ export interface SetView {
   /** How many pixels in the whole set wear each canonical colour. Panel 2 shows it beside the swatch. */
   readonly counts: readonly number[];
   /** The draft annotation, index-aligned with `order`. A person edits this; nothing else here changes. */
-  colorMap: Meaning[];
-  /** Region id → the name a person gave it. Content, so never translated. */
-  regionNames: Record<number, string>;
+  positions: Meaning[];
 }
 
 export interface Imported {
@@ -38,9 +36,6 @@ export interface Imported {
   /** Files that could not be read, with the reason, so a refusal is shown rather than swallowed. */
   readonly refused: readonly { readonly name: string; readonly why: string }[];
 }
-
-/** Default names for what `suggest` proposes. A person renames them; they are a starting point, not a rule. */
-const DRAFT_REGION_NAMES: Readonly<Record<number, string>> = { 1: 'material', 2: 'shadow' };
 
 export async function importFiles(files: readonly { name: string; bytes: Uint8Array }[]): Promise<Imported> {
   const decoded: { name: string; image: DecodedPng }[] = [];
@@ -87,8 +82,7 @@ export async function importFiles(files: readonly { name: string; bytes: Uint8Ar
       order,
       sheets,
       counts,
-      colorMap: suggest(order).map(({ region, level }) => ({ region, level })),
-      regionNames: { ...DRAFT_REGION_NAMES },
+      positions: suggest(order).map(({ region, level }) => ({ region, level })),
     });
   }
   return { sets, refused };

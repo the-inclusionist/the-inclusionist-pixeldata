@@ -57,14 +57,21 @@ export interface Sheet {
 }
 
 /** What one canonical colour index MEANS. Region 0 is nothing at all — the hole in the picture. */
+/**
+ * What one position in the index space MEANS. The region is the word a person typed — free text, not a code
+ * from a list — because the file is written to be read by a language model as much as by a program.
+ *
+ * ⚠️ `region: null` is nothing at all: the hole in the picture. It is `null` rather than a word like
+ * «nothing», because a word could collide with one a person types.
+ */
 export interface Meaning {
-  readonly region: number;
+  readonly region: string | null;
   readonly level: number;
 }
 
 export interface LevelSpec {
   readonly steps: number;
-  /** Which level index is the outline, per region. `null` where a region has none. */
+  /** Which level index is the outline. `null` where a region has none. Never guessed. */
   readonly outline: number | null;
 }
 
@@ -78,23 +85,33 @@ export interface Provenance {
   readonly derivedFrom: string | null;
 }
 
-export interface SemanticSet {
-  readonly schema: 1;
-  readonly regions: Readonly<Record<string, string>>;
-  readonly levels: Readonly<Record<string, LevelSpec>>;
-  readonly sheets: readonly Sheet[];
-  /** Indexed by canonical colour index. The record of HOW the annotation was made. */
-  readonly colorMap: readonly Meaning[];
-  /** Ids of the palettes known to be compatible — harvested from variants of the same drawing. */
-  readonly palettes: readonly string[];
-  readonly source: Provenance;
-}
+/** One palette: `ramp[regionName][level]` is a colour written `#rrggbbaa`. */
+export type Ramps = Readonly<Record<string, readonly string[]>>;
 
-export interface Palette {
-  readonly schema: 1;
-  readonly name: string;
-  /** `regions[regionId].variants[variantName][level]` is a colour, written `#rrggbbaa`. */
-  readonly regions: Readonly<Record<string, { readonly variants: Readonly<Record<string, readonly string[]>> }>>;
+/**
+ * 🔴 ONE FILE, and it holds the pixels AND the colours (ADR-0135).
+ *
+ * Schema 1 wrote two — a set file and a palette file — so one palette could serve several sets. The Dev
+ * decided against it twice, and the reuse it bought was theoretical: palettes are harvested from the same
+ * import that produced the sheets, and a reader that has to open two files to draw one sprite is a reader
+ * that can be handed half a resource.
+ *
+ * ⚠️ THE REGION IS A WORD, NOT AN ID. Schema 1 kept `regions: {id → name}` and wrote ids in the map, which
+ * meant joining two structures to learn what a pixel is. The file is written to be read by a language model,
+ * and a join is exactly the kind of thing that gets read wrong.
+ */
+export interface SemanticSet {
+  readonly schema: 2;
+  /** A sentence saying what this file is, for whoever — or whatever — opens it first. */
+  readonly '//'?: string;
+  readonly sheets: readonly Sheet[];
+  /** Indexed by position in the index space the grids use: what that position means. */
+  readonly positions: readonly Meaning[];
+  /** Per region name: how many steps its ramp has, and which step is the outline. */
+  readonly levels: Readonly<Record<string, LevelSpec>>;
+  /** `palettes[variantName][regionName][level]` — every palette this art was found wearing. */
+  readonly palettes: Readonly<Record<string, Ramps>>;
+  readonly source: Provenance;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -132,18 +149,20 @@ export function gridFor(image: Pixels, order: readonly number[]): Int32Array {
 export interface SetParts {
   readonly sheets: readonly { name: string; image: Pixels; frames?: readonly Frame[] }[];
   readonly order: readonly number[];
-  readonly colorMap: readonly Meaning[];
-  readonly regions: Readonly<Record<string, string>>;
+  readonly positions: readonly Meaning[];
   readonly levels: Readonly<Record<string, LevelSpec>>;
-  readonly palettes: readonly string[];
+  readonly palettes: Readonly<Record<string, Ramps>>;
   readonly source: Provenance;
 }
 
+const EXPLAINS = 'Semantic pixel art: `grid` holds run-length rows of POSITION indices, `positions` says what '
+  + 'each position means, and `palettes` gives the colours each meaning wears. A pixel is described by what '
+  + 'it IS, never by what colour it happens to be.';
+
 export function buildSet(parts: SetParts): SemanticSet {
   return {
-    schema: 1,
-    regions: parts.regions,
-    levels: parts.levels,
+    schema: 2,
+    '//': EXPLAINS,
     sheets: parts.sheets.map((sheet) => ({
       name: sheet.name,
       width: sheet.image.width,
@@ -151,7 +170,8 @@ export function buildSet(parts: SetParts): SemanticSet {
       grid: encodeGrid(gridFor(sheet.image, parts.order), sheet.image.width, sheet.image.height),
       frames: sheet.frames ?? [],
     })),
-    colorMap: parts.colorMap,
+    positions: parts.positions,
+    levels: parts.levels,
     palettes: parts.palettes,
     source: parts.source,
   };
@@ -161,32 +181,33 @@ export function buildSet(parts: SetParts): SemanticSet {
 // Writing and reading
 // ---------------------------------------------------------------------------------------------------------
 
-/** Two-space JSON, because this file is meant to be read by a person and diffed by git. */
+/** Two-space JSON, because this file is meant to be read by a person, a model, and git alike. */
 export function serialiseSet(set: SemanticSet): string {
-  return `${JSON.stringify(set, null, 2)}\n`;
+  return `${JSON.stringify(set, null, 2)}
+`;
 }
 
 /**
  * Read a set back, refusing anything it cannot trust.
  *
- * ⚠️ The validation with the most teeth is the one that rejects two indices meaning the same
- * `(region, level)`. It makes a ramp ambiguous — two source colours claiming one step — and recomposition
- * would silently pick whichever came last. Nothing downstream would report an error.
+ * ⚠️ The check with the most teeth rejects two positions meaning the same `(region, level)`. It makes a ramp
+ * ambiguous — two source colours claiming one step — and recomposition would silently take whichever came
+ * last. Nothing downstream would report an error.
  */
 export function parseSet(text: string): SemanticSet {
   const raw = JSON.parse(text) as SemanticSet;
-  if (raw.schema !== 1) throw new Error(`schema ${raw.schema} is not one this reader knows`);
+  if (raw.schema !== 2) throw new Error(`schema ${raw.schema} is not one this reader knows`);
 
   const claimed = new Map<string, number>();
-  raw.colorMap.forEach((meaning, index) => {
-    if (meaning.region === 0) return; // nothing has no ramp and no level to claim
-    if (!(String(meaning.region) in raw.regions)) {
-      throw new Error(`colorMap index ${index} names region ${meaning.region}, which the vocabulary does not hold`);
+  raw.positions.forEach((meaning, index) => {
+    if (meaning.region === null) return; // nothing has no ramp and claims no level
+    if (!(meaning.region in raw.levels)) {
+      throw new Error(`position ${index} names region "${meaning.region}", which \`levels\` does not describe`);
     }
     const key = `${meaning.region}/${meaning.level}`;
     const already = claimed.get(key);
     if (already !== undefined) {
-      throw new Error(`region ${meaning.region} level ${meaning.level} is claimed twice — by index ${already} and index ${index}`);
+      throw new Error(`region "${meaning.region}" level ${meaning.level} is claimed twice — by position ${already} and position ${index}`);
     }
     claimed.set(key, index);
   });
@@ -194,8 +215,8 @@ export function parseSet(text: string): SemanticSet {
   for (const sheet of raw.sheets) {
     const grid = decodeGrid(sheet.grid, sheet.width, sheet.height);
     for (const index of grid) {
-      if (index >= raw.colorMap.length) {
-        throw new Error(`sheet "${sheet.name}" uses index ${index}, and the colorMap holds only ${raw.colorMap.length}`);
+      if (index >= raw.positions.length) {
+        throw new Error(`sheet "${sheet.name}" uses position ${index}, and the file describes only ${raw.positions.length}`);
       }
     }
   }
@@ -209,59 +230,57 @@ export function parseSet(text: string): SemanticSet {
 /**
  * Turn a set's own colours into a palette, one ramp per region.
  *
- * 🎯 This is also the shape a HARVESTED variant takes: because a variant has the same drawing, its colour at
- * canonical position `i` is the same step as the annotated one's colour at `i`, so the same walk over
- * `colorMap` produces its ramp with no matching and no nearest-colour anywhere.
+ * 🎯 This is also the shape a HARVESTED variant takes: a variant has the same drawing, so its colour at
+ * position `i` is the same step as the annotated one's colour at `i`, and the same walk over `positions`
+ * produces its ramp with no matching and no nearest-colour anywhere.
  */
-export function harvestPalette(set: SemanticSet, order: readonly number[], variant: string): Palette {
-  const regions: Record<string, { variants: Record<string, string[]> }> = {};
-  set.colorMap.forEach((meaning, index) => {
-    if (meaning.region === 0) return;
-    const region = (regions[String(meaning.region)] ??= { variants: { [variant]: [] } });
-    (region.variants[variant] ??= [])[meaning.level] = HEX(order[index]!);
+export function harvestPalette(positions: readonly Meaning[], order: readonly (number | undefined)[]): Ramps {
+  const ramps: Record<string, string[]> = {};
+  positions.forEach((meaning, index) => {
+    const colour = order[index];
+    // A position this palette cannot reach contributes nothing. Filling it with a nearby colour would put
+    // a colour that palette does not have into a ramp, and nothing downstream could tell.
+    if (meaning.region === null || colour === undefined) return;
+    (ramps[meaning.region] ??= [])[meaning.level] = HEX(colour);
   });
-  return { schema: 1, name: variant, regions };
+  return ramps;
 }
 
 /**
- * Which variant each region wears. A single name means «this one everywhere», which is what the source
- * round trip wants; a map chooses per region, which is what a game wants.
+ * Which variant each region wears. A single name means «this one everywhere», which is what reproducing the
+ * source wants; a map chooses per region, which is what a game wants.
  */
 export type VariantChoice = string | Readonly<Record<string, string>>;
 
-const variantFor = (choice: VariantChoice, region: number): string | undefined =>
-  typeof choice === 'string' ? choice : choice[String(region)];
+const variantFor = (choice: VariantChoice, region: string): string | undefined =>
+  typeof choice === 'string' ? choice : choice[region];
 
 /**
- * 🔴 THE OTHER HALF OF THE ROUND TRIP. Walk a sheet's grid, look each index up in `colorMap`, and take the
- * colour from the chosen ramp. Region 0 stays transparent.
+ * 🔴 THE OTHER HALF OF THE ROUND TRIP. Walk a sheet's grid, look each position up in `positions`, and take
+ * the colour from the chosen ramp. A position meaning nothing stays transparent.
  *
- * ⚠️ THE CHOICE IS PER REGION, and an earlier version of this took one global variant name. That version
- * could only ever recolour everything at once — there was no «light skin with a red shirt» — which empties
- * the palette dictionary of its purpose. The structure `region → variants` exists precisely so a variant is
- * swapped WITHIN a region, and this signature is what makes that true in code.
+ * ⚠️ THE CHOICE IS PER REGION. A single global variant could only recolour everything at once — there would
+ * be no «light skin with a red shirt» — which empties the palette dictionary of its purpose.
  */
-export function recompose(set: SemanticSet, sheetName: string, palette: Palette, choice: VariantChoice): Uint8Array {
+export function recompose(set: SemanticSet, sheetName: string, choice: VariantChoice): Uint8Array {
   const sheet = set.sheets.find((s) => s.name === sheetName);
-  if (!sheet) throw new Error(`this set holds no sheet named "${sheetName}"`);
+  if (!sheet) throw new Error(`this file holds no sheet named "${sheetName}"`);
 
   const grid = decodeGrid(sheet.grid, sheet.width, sheet.height);
   const rgba = new Uint8Array(sheet.width * sheet.height * 4);
 
   for (let i = 0; i < grid.length; i++) {
-    const meaning = set.colorMap[grid[i]!]!;
-    if (meaning.region === 0) continue; // already zeroed, and zero alpha is nothing
+    const meaning = set.positions[grid[i]!]!;
+    if (meaning.region === null) continue; // already zeroed, and zero alpha is nothing
     const variant = variantFor(choice, meaning.region);
     if (variant === undefined) {
-      throw new Error(`no variant was chosen for region ${meaning.region}, and this sheet uses it`);
+      throw new Error(`no palette was chosen for region "${meaning.region}", and this sheet uses it`);
     }
-    const ramp = palette.regions[String(meaning.region)]?.variants[variant];
-    if (!ramp) {
-      throw new Error(`palette "${palette.name}" has no variant "${variant}" for region ${meaning.region}`);
-    }
+    const ramp = set.palettes[variant]?.[meaning.region];
+    if (!ramp) throw new Error(`palette "${variant}" has no ramp for region "${meaning.region}"`);
     const hex = ramp[meaning.level];
     if (hex === undefined) {
-      throw new Error(`the ramp for region ${meaning.region} variant "${variant}" has no level ${meaning.level}`);
+      throw new Error(`the ramp for region "${meaning.region}" in palette "${variant}" has no level ${meaning.level}`);
     }
     const colour = UNHEX(hex);
     if (colour === NOTHING) continue;

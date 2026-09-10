@@ -168,7 +168,7 @@ const swatchStyle = (colour: number): string => {
 
 export interface ColourRowHandlers {
   readonly onIsolate: (index: number | null) => void;
-  readonly onRegion: (index: number, region: number) => void;
+  readonly onRegion: (index: number, region: string | null) => void;
   readonly onLevel: (index: number, level: number) => void;
 }
 
@@ -187,7 +187,7 @@ export function paintColours(host: HTMLElement, selection: Selection, handlers: 
   list.className = 'colours';
 
   base.order.forEach((_, index) => {
-    const meaning = base.colorMap[index]!;
+    const meaning = base.positions[index]!;
     const colour = colours[index];
     const row = document.createElement('li');
     row.className = 'colour';
@@ -209,21 +209,16 @@ export function paintColours(host: HTMLElement, selection: Selection, handlers: 
     count.className = 'count';
     count.textContent = String(base.counts[index]);
 
-    const region = document.createElement('select');
+    // 🔴 FREE TEXT, NOT A LIST. The vocabulary is whatever this artwork needs, and the file is written to be
+    // read by a language model — «pele», «couro do cinto», «brilho da lâmina» are all better answers than
+    // anything a dropdown could have offered. An empty field means the position is nothing at all.
+    const region = document.createElement('input');
+    region.type = 'text';
     region.className = 'region';
+    region.value = meaning.region ?? '';
+    region.placeholder = t('row.regionPlaceholder');
     region.setAttribute('aria-label', t('row.region'));
-    const options: readonly (readonly [number, string])[] = [
-      [0, t('region.nothing')],
-      ...Object.entries(base.regionNames).map(([k, v]) => [Number(k), v] as const),
-    ];
-    for (const [id, name] of options) {
-      const option = document.createElement('option');
-      option.value = String(id);
-      option.textContent = name;
-      option.selected = id === meaning.region;
-      region.append(option);
-    }
-    region.addEventListener('change', () => handlers.onRegion(index, Number(region.value)));
+    region.addEventListener('change', () => handlers.onRegion(index, region.value.trim() || null));
 
     const level = document.createElement('input');
     level.type = 'number';
@@ -231,7 +226,7 @@ export function paintColours(host: HTMLElement, selection: Selection, handlers: 
     level.className = 'level';
     level.value = String(meaning.level);
     level.setAttribute('aria-label', t('row.level'));
-    level.disabled = meaning.region === 0; // nothing has no ramp, so it has no step to sit on
+    level.disabled = meaning.region === null; // nothing has no ramp, so it has no step to sit on
     level.addEventListener('change', () => handlers.onLevel(index, Math.max(0, Number(level.value) | 0)));
 
     row.append(swatch, count, region, level);

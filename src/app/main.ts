@@ -11,13 +11,14 @@ import {
   artPixels, paintArt, paintColours, paintDrawings, paintPalettes, explain, currentSheet,
   type Selection, type View,
 } from './panels.ts';
-import { workspacesIn, type Workspace } from './workspace.ts';
+import { workspacesIn, paletteColours, type Workspace } from './workspace.ts';
 import {
-  buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT,
+  buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toSemanticSet, SOURCE_VARIANT,
   type Draft, type OutputFile,
 } from './save.ts';
 import { collectPngFiles, collectFromInput, collectFromDrop, type Collected, type DirectoryLike } from './folder.ts';
-import type { Provenance } from '../format/semantic.ts';
+import { harvestPalette, type Meaning, type Provenance, type Ramps } from '../format/semantic.ts';
+import { luminance } from './annotate.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -50,12 +51,57 @@ const draftOf = (set: SetView): Draft => ({
   name: $<HTMLInputElement>('set-name').value || 'set',
   set,
   source: provenance(),
+  harvested: everyPalette(),
 });
 
-const meaningAt = (index: number): { region: number; level: number } => selection!.workspace.base.colorMap[index]!;
+/**
+ * 🔴 EVERY PALETTE THE WORKSPACE FOUND GOES INTO THE FILE, and that is the point of one file: a game that
+ * wants four team colours opens one thing. Only `source` would leave panel 3 showing palettes the saved file
+ * does not carry — which is worse than not offering them.
+ */
+function everyPalette(): Record<string, Ramps> {
+  if (!selection) return {};
+  const { workspace, palette: current } = selection;
+  const out: Record<string, Ramps> = {};
+  for (const palette of workspace.palettes) {
+    if (palette.set === workspace.base) continue; // `source` is written from the base itself
+    out[palette.name] = harvestPalette(workspace.base.positions, paletteColours(workspace, palette));
+  }
+  void current;
+  return out;
+}
 
-function setMeaning(index: number, meaning: { region: number; level: number }): void {
-  selection!.workspace.base.colorMap[index] = meaning;
+const meaningAt = (index: number): Meaning => selection!.workspace.base.positions[index]!;
+
+function setMeaning(index: number, meaning: Meaning): void {
+  selection!.workspace.base.positions[index] = meaning;
+  render();
+}
+
+/**
+ * 🔴 NAMING A REGION RE-RANKS ITS LEVELS BY LUMINANCE, and it has to.
+ *
+ * The draft ranks every opaque colour as ONE region, so the moment a person splits them into «pele», «cabelo»
+ * and «roupa» the levels scatter — 1, 5, 2 where 0, 1, 2 was meant. That leaves ramps full of holes
+ * (`[null, "#…", "#…", null, null, "#…"]`) and a `steps` count that lies: eleven steps for a region with one
+ * colour. A ramp runs shadow to light, so the ranking IS the level, and it is recomputed whenever the
+ * membership of a region changes.
+ *
+ * ⚠️ It overwrites a level set by hand in that region. That is the trade: a hand-set level is rare and
+ * repeatable, and a silently broken ramp is neither.
+ */
+function renameRegion(index: number, region: string | null): void {
+  const base = selection!.workspace.base;
+  base.positions[index] = { region, level: base.positions[index]!.level };
+
+  for (const name of new Set(base.positions.map((m) => m.region))) {
+    if (name === null) continue;
+    const members = base.positions
+      .map((m, i) => ({ m, i }))
+      .filter(({ m }) => m.region === name)
+      .sort((a, b) => luminance(base.order[a.i]!) - luminance(base.order[b.i]!));
+    members.forEach(({ i }, level) => { base.positions[i] = { region: name, level }; });
+  }
   render();
 }
 
@@ -91,14 +137,14 @@ function render(): void {
     paintPalettes($('palettes'), selection, (palette) => { selection!.palette = palette; render(); });
     paintColours($('colours'), selection, {
       onIsolate: (index) => { selection!.isolated = index; render(); },
-      onRegion: (index, region) => setMeaning(index, { region, level: meaningAt(index).level }),
+      onRegion: (index, region) => renameRegion(index, region),
       onLevel: (index, level) => setMeaning(index, { region: meaningAt(index).region, level }),
     });
   }
 
   // ⚠️ A WARNING, NEVER A GATE. A ramp that does not climb is probably two levels swapped — the art would
   // recolour with its shading inverted, which looks wrong and does not fail. But a FLAT ramp is legitimate.
-  const rough = selection ? nonMonotonicRamps(toPalette(draftOf(selection.workspace.base)), SOURCE_VARIANT) : [];
+  const rough = selection ? nonMonotonicRamps(toSemanticSet(draftOf(selection.workspace.base)), SOURCE_VARIANT) : [];
   const warning = rough.length > 0 ? ` ⚠️ ${t('ramp.warning')} ${rough.length}` : '';
   const tail = notice || t('state.notWired');
   $('explain').textContent = `${explain(selection, imported.refused.length, unreachable)} — ${tail}${warning}`;
@@ -154,13 +200,6 @@ function fillWorkspaceChooser(): void {
     chooser.append(option);
   });
   chooser.hidden = workspaces.length < 2;
-}
-
-function addRegion(name: string): void {
-  if (!selection || !name.trim()) return;
-  const names = selection.workspace.base.regionNames;
-  names[Math.max(0, ...Object.keys(names).map(Number)) + 1] = name.trim();
-  render();
 }
 
 /**
@@ -291,12 +330,6 @@ function start(): void {
     if (!selection) return;
     selection.view = (event.target as HTMLInputElement).value as View;
     render();
-  });
-
-  const newRegion = $<HTMLInputElement>('new-region');
-  $<HTMLButtonElement>('add-region').addEventListener('click', () => {
-    addRegion(newRegion.value);
-    newRegion.value = '';
   });
 
   $<HTMLButtonElement>('save').addEventListener('click', () => { void save(); });

@@ -1,20 +1,6 @@
 {
   "//": "schema 99: a reader must refuse a version it does not know, never read it hopefully.",
   "schema": 99,
-  "regions": {
-    "1": "skin",
-    "2": "shadow"
-  },
-  "levels": {
-    "1": {
-      "steps": 3,
-      "outline": 2
-    },
-    "2": {
-      "steps": 1,
-      "outline": null
-    }
-  },
   "sheets": [
     {
       "name": "tiny",
@@ -41,32 +27,60 @@
       ]
     }
   ],
-  "colorMap": [
+  "positions": [
     {
-      "region": 0,
+      "region": null,
       "level": 0
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 0
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 1
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 2
     },
     {
-      "region": 2,
+      "region": "shadow",
       "level": 0
     }
   ],
-  "palettes": [
-    "source",
-    "amber"
-  ],
+  "levels": {
+    "skin": {
+      "steps": 3,
+      "outline": 2
+    },
+    "shadow": {
+      "steps": 1,
+      "outline": null
+    }
+  },
+  "palettes": {
+    "source": {
+      "skin": [
+        "#3b2418ff",
+        "#9c6a4dff",
+        "#140c08ff"
+      ],
+      "shadow": [
+        "#0000005a"
+      ]
+    },
+    "amber": {
+      "skin": [
+        "#4a2c14ff",
+        "#bb8148ff",
+        "#1a0f06ff"
+      ],
+      "shadow": [
+        "#0000008c"
+      ]
+    }
+  },
   "source": {
     "author": "hand-written fixture",
     "url": "https://example.invalid/tiny.png",

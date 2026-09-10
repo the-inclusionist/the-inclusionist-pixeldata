@@ -10,12 +10,9 @@
 // anybody having to keep two files in step by hand.
 import {
   buildSet, serialiseSet, parseSet, harvestPalette, recompose,
-  type Provenance, type SemanticSet, type Palette, type LevelSpec,
+  type Provenance, type SemanticSet, type Ramps, type LevelSpec,
 } from '../format/semantic.ts';
 import type { SetView } from './import.ts';
-
-/** The name a variant harvested from the set's own colours goes by. */
-export const SOURCE_VARIANT = 'source';
 
 export interface OutputFile {
   readonly name: string;
@@ -44,10 +41,9 @@ export function defaultSetName(sheetNames: readonly string[]): string {
 /** How many steps each region's ramp has, and which step is its outline. Derived, never asked for. */
 export function levelsOf(set: SetView): Record<string, LevelSpec> {
   const steps: Record<string, number> = {};
-  for (const meaning of set.colorMap) {
-    if (meaning.region === 0) continue;
-    const key = String(meaning.region);
-    steps[key] = Math.max(steps[key] ?? 0, meaning.level + 1);
+  for (const meaning of set.positions) {
+    if (meaning.region === null) continue;
+    steps[meaning.region] = Math.max(steps[meaning.region] ?? 0, meaning.level + 1);
   }
   // ⚠️ `outline` is null everywhere until a person marks one. Guessing «the darkest step is the outline»
   // would be right often enough to be trusted and wrong often enough to matter — a metal outline is not the
@@ -59,80 +55,45 @@ export interface Draft {
   readonly name: string;
   readonly set: SetView;
   readonly source: Provenance;
-  /**
-   * Palettes harvested from variants of the same drawing (panel 4). They go into the SAME palette file as
-   * the source, because the format is `region → variants → ramp` and a variant is exactly what a variant
-   * entry is for — one file per variant would be splitting a structure that is already the right shape.
-   */
-  readonly harvested?: readonly Palette[];
+  /** Palettes harvested from other palettes of the same drawings, by name. They ride into the one file. */
+  readonly harvested?: Readonly<Record<string, Ramps>>;
 }
 
-/** Fold several palettes into one, keeping every variant of every region. */
-export function mergePalettes(name: string, palettes: readonly Palette[]): Palette {
-  const regions: Record<string, { variants: Record<string, readonly string[]> }> = {};
-  for (const palette of palettes) {
-    for (const [id, region] of Object.entries(palette.regions)) {
-      const target = (regions[id] ??= { variants: {} });
-      Object.assign(target.variants, region.variants);
-    }
-  }
-  return { schema: 1, name, regions };
-}
+/** The palette that reproduces the art exactly — the colours the source files actually hold. */
+export const SOURCE_VARIANT = 'source';
 
 export function toSemanticSet(draft: Draft): SemanticSet {
   return buildSet({
     sheets: draft.set.sheets.map((sheet) => ({ name: sheet.name, image: sheet.image })),
     order: draft.set.order,
-    colorMap: draft.set.colorMap,
-    regions: Object.fromEntries(Object.entries(draft.set.regionNames).map(([id, name]) => [id, name])),
+    positions: draft.set.positions,
     levels: levelsOf(draft.set),
-    palettes: variantNames(draft),
+    palettes: {
+      [SOURCE_VARIANT]: harvestPalette(draft.set.positions, draft.set.order),
+      ...(draft.harvested ?? {}),
+    },
     source: draft.source,
   });
 }
 
-/** Every variant this set can be worn in, `source` first because it is the one that reproduces the art. */
+/** Every palette this art can wear, `source` first because it is the one that reproduces the files. */
 export function variantNames(draft: Draft): string[] {
-  const harvested = (draft.harvested ?? []).map((p) => p.name);
-  return [SOURCE_VARIANT, ...harvested];
+  return Object.keys(toSemanticSet(draft).palettes);
 }
 
-export function toPalette(draft: Draft): Palette {
-  // ⚠️ The source palette is harvested from a set built WITHOUT the palette list, or the two would define
-  // each other. Only `colorMap` and the canonical order matter to the harvest, and neither depends on it.
-  const bare = buildSet({
-    sheets: draft.set.sheets.map((sheet) => ({ name: sheet.name, image: sheet.image })),
-    order: draft.set.order,
-    colorMap: draft.set.colorMap,
-    regions: draft.set.regionNames as unknown as Record<string, string>,
-    levels: levelsOf(draft.set),
-    palettes: [],
-    source: draft.source,
-  });
-  const source = harvestPalette(bare, draft.set.order, SOURCE_VARIANT);
-  return mergePalettes(draft.name, [source, ...(draft.harvested ?? [])]);
-}
-
-/** The two files, ready to be written wherever the person chooses. */
+/** 🔴 ONE FILE (ADR-0135). The pixels and the colours travel together, or a reader can be handed half. */
 export function buildOutputs(draft: Draft): OutputFile[] {
-  return [
-    { name: `${draft.name}.semantic.json`, text: serialiseSet(toSemanticSet(draft)) },
-    { name: `${draft.name}.palette.json`, text: `${JSON.stringify(toPalette(draft), null, 2)}\n` },
-  ];
+  return [{ name: `${draft.name}.semantic.json`, text: serialiseSet(toSemanticSet(draft)) }];
 }
 
 /**
  * 🔴 CAN THIS ANNOTATION SURVIVE BEING WRITTEN AND READ BACK? Returns the problem, or `null` when there is
  * none. This is what the «recomposed» view runs before it draws anything.
- *
- * The failure it exists for is two colours claiming the same `(region, level)`: it makes a ramp ambiguous,
- * and without this check the person would find out at the moment the engine renders their art wrong.
  */
 export function annotationProblem(draft: Draft): string | null {
   try {
     const set = parseSet(serialiseSet(toSemanticSet(draft)));
-    const palette = toPalette(draft);
-    for (const sheet of set.sheets) recompose(set, sheet.name, palette, SOURCE_VARIANT);
+    for (const sheet of set.sheets) recompose(set, sheet.name, SOURCE_VARIANT);
     return null;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
@@ -143,29 +104,25 @@ export function annotationProblem(draft: Draft): string | null {
  * The recomposed pixels of one sheet, taken the long way round — written, read back, and rebuilt from the
  * palette. Going the long way is the point: it exercises the file, not the objects in memory.
  */
-export function recomposedPixels(draft: Draft, sheetName: string): Uint8Array {
-  const set = parseSet(serialiseSet(toSemanticSet(draft)));
-  return recompose(set, sheetName, toPalette(draft), SOURCE_VARIANT);
+export function recomposedPixels(draft: Draft, sheetName: string, variant = SOURCE_VARIANT): Uint8Array {
+  return recompose(parseSet(serialiseSet(toSemanticSet(draft))), sheetName, variant);
 }
 
 /**
  * 🔴 A RAMP THAT DOES NOT CLIMB IS PROBABLY AN ANNOTATION MISTAKE — and it WARNS rather than refuses.
  *
  * A ramp runs shadow to light, so its colours should rise in luminance. When they do not, two levels were
- * most likely swapped, and the art will recolour with its shading inverted — which looks wrong and does not
- * fail. But a FLAT ramp is legitimate (a single-colour material, a shadow at one alpha) and so is a
- * deliberately inverted one, so refusing would be wrong. This says what it saw and leaves the decision.
+ * most likely swapped and the art will recolour with its shading inverted — which looks wrong and does not
+ * fail. But a FLAT ramp is legitimate, and so is a deliberately inverted one, so refusing would be wrong.
  */
-export function nonMonotonicRamps(palette: Palette, variant: string): { region: string; at: number }[] {
+export function nonMonotonicRamps(set: SemanticSet, variant: string): { region: string; at: number }[] {
   const found: { region: string; at: number }[] = [];
-  for (const [id, region] of Object.entries(palette.regions)) {
-    const ramp = region.variants[variant];
-    if (!ramp) continue;
+  for (const [region, ramp] of Object.entries(set.palettes[variant] ?? {})) {
     for (let i = 1; i < ramp.length; i++) {
       const before = ramp[i - 1];
       const here = ramp[i];
       if (before === undefined || here === undefined) continue;
-      if (luminanceOfHex(here) < luminanceOfHex(before)) found.push({ region: id, at: i });
+      if (luminanceOfHex(here) < luminanceOfHex(before)) found.push({ region, at: i });
     }
   }
   return found;

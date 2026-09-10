@@ -31,9 +31,12 @@ What does work, and is proved rather than claimed:
 - **The four panels.** The sheet at 4× with one colour singled out and the rest dropped to grey; the colour
   table where the meaning is decided; the set that shares this palette; and the same drawing in other
   palettes, each one clickable to **harvest** its ramps.
-- **`fixtures/`** — a valid set worked out BY HAND, with the exact pixels each variant must produce, and five
-  files a conforming reader must refuse. They are what makes [`docs/FORMAT.md`](docs/FORMAT.md) checkable
-  from the other side rather than merely written down.
+- **`fixtures/`** — a valid file worked out BY HAND, with the exact pixels each palette choice must produce,
+  and five files a conforming reader must refuse. They are what makes [`docs/FORMAT.md`](docs/FORMAT.md)
+  checkable from the other side rather than merely written down.
+- **ONE file out** ([ADR-0135](https://github.com/the-inclusionist/the-inclusionist-docs/blob/main/docs/2-Architecture/adr/ADR-0135-one-file-carries-the-pixels-and-the-colours-and-a-region-is-a-word.yaml)),
+  carrying the pixels and every palette the art was found wearing — and a region written as a **word**, in
+  place, because the file is imported for a language model to read and a join is where a reader goes wrong.
 - **The format, written and read** ([`docs/FORMAT.md`](docs/FORMAT.md)), with the round trip watched on
   screen: the «recomposed» view goes the long way — written to text, read back, rebuilt from the palette —
   and «difference» lights up where the two disagree, so an empty panel is the proof.

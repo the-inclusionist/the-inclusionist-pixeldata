@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseSet, recompose, type Palette, type VariantChoice } from '../src/format/semantic.ts';
+import { parseSet, recompose, type VariantChoice } from '../src/format/semantic.ts';
 
 const read = (...parts: string[]): string => readFileSync(join(process.cwd(), 'fixtures', ...parts), 'utf8');
 
@@ -22,7 +22,6 @@ interface ExpectedCase {
 
 describe('fixtures/valid — what a reader must reproduce', () => {
   const set = parseSet(read('valid', 'tiny.semantic.json'));
-  const palette = JSON.parse(read('valid', 'tiny.palette.json')) as Palette;
   const expected = JSON.parse(read('valid', 'tiny.expected.json')) as { sheet: string; cases: ExpectedCase[] };
 
   it('Right: the semantic file is accepted', () => {
@@ -33,7 +32,7 @@ describe('fixtures/valid — what a reader must reproduce', () => {
   for (const [i, one] of (JSON.parse(read('valid', 'tiny.expected.json')) as { cases: ExpectedCase[] }).cases.entries()) {
     const label = typeof one.variants === 'string' ? one.variants : 'per region';
     it(`🔴 case ${i + 1} — ${label}: every pixel matches the hand-worked expectation`, () => {
-      expect([...recompose(set, expected.sheet, palette, one.variants)]).toEqual([...one.pixels]);
+      expect([...recompose(set, expected.sheet, one.variants)]).toEqual([...one.pixels]);
     });
   }
 

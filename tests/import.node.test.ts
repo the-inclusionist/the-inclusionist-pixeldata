@@ -59,8 +59,8 @@ describe('importFiles', () => {
   it('Right: the draft annotation is index-aligned with the order and ready to be edited', async () => {
     const { sets } = await importFiles([{ name: 'a.png', bytes: await sheet(RED, CLEAR) }]);
     const set = sets[0]!;
-    expect(set.colorMap).toHaveLength(set.order.length);
-    expect(set.colorMap[set.order.indexOf(NOTHING)]!.region).toBe(0);
+    expect(set.positions).toHaveLength(set.order.length);
+    expect(set.positions[set.order.indexOf(NOTHING)]!.region).toBeNull();
   });
 
   it('🔴 Exercise the exceptional: a file that cannot be read is REFUSED and named, never dropped', async () => {

@@ -1,10 +1,6 @@
 {
-  "schema": 1,
-  "regions": { "1": "skin", "2": "shadow" },
-  "levels": {
-    "1": { "steps": 3, "outline": 2 },
-    "2": { "steps": 1, "outline": null }
-  },
+  "schema": 2,
+  "//": "Semantic pixel art: `grid` holds run-length rows of POSITION indices, `positions` says what each position means, and `palettes` gives the colours each meaning wears. A pixel is described by what it IS, never by what colour it happens to be.",
   "sheets": [
     {
       "name": "tiny",
@@ -20,14 +16,27 @@
       ]
     }
   ],
-  "colorMap": [
-    { "region": 0, "level": 0 },
-    { "region": 1, "level": 0 },
-    { "region": 1, "level": 1 },
-    { "region": 1, "level": 2 },
-    { "region": 2, "level": 0 }
+  "positions": [
+    { "region": null, "level": 0 },
+    { "region": "skin", "level": 0 },
+    { "region": "skin", "level": 1 },
+    { "region": "skin", "level": 2 },
+    { "region": "shadow", "level": 0 }
   ],
-  "palettes": ["source", "amber"],
+  "levels": {
+    "skin": { "steps": 3, "outline": 2 },
+    "shadow": { "steps": 1, "outline": null }
+  },
+  "palettes": {
+    "source": {
+      "skin": ["#3b2418ff", "#9c6a4dff", "#140c08ff"],
+      "shadow": ["#0000005a"]
+    },
+    "amber": {
+      "skin": ["#4a2c14ff", "#bb8148ff", "#1a0f06ff"],
+      "shadow": ["#0000008c"]
+    }
+  },
   "source": {
     "author": "hand-written fixture",
     "url": "https://example.invalid/tiny.png",

@@ -1,20 +1,6 @@
 {
-  "//": "index 1 and index 2 both claim (region 1, level 0): the ramp is ambiguous and recomposition would take one of them.",
-  "schema": 1,
-  "regions": {
-    "1": "skin",
-    "2": "shadow"
-  },
-  "levels": {
-    "1": {
-      "steps": 3,
-      "outline": 2
-    },
-    "2": {
-      "steps": 1,
-      "outline": null
-    }
-  },
+  "//": "positions 1 and 2 both claim skin level 0: the ramp is ambiguous and recomposition would take one of them.",
+  "schema": 2,
   "sheets": [
     {
       "name": "tiny",
@@ -41,32 +27,60 @@
       ]
     }
   ],
-  "colorMap": [
+  "positions": [
     {
-      "region": 0,
+      "region": null,
       "level": 0
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 0
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 0
     },
     {
-      "region": 1,
+      "region": "skin",
       "level": 2
     },
     {
-      "region": 2,
+      "region": "shadow",
       "level": 0
     }
   ],
-  "palettes": [
-    "source",
-    "amber"
-  ],
+  "levels": {
+    "skin": {
+      "steps": 3,
+      "outline": 2
+    },
+    "shadow": {
+      "steps": 1,
+      "outline": null
+    }
+  },
+  "palettes": {
+    "source": {
+      "skin": [
+        "#3b2418ff",
+        "#9c6a4dff",
+        "#140c08ff"
+      ],
+      "shadow": [
+        "#0000005a"
+      ]
+    },
+    "amber": {
+      "skin": [
+        "#4a2c14ff",
+        "#bb8148ff",
+        "#1a0f06ff"
+      ],
+      "shadow": [
+        "#0000008c"
+      ]
+    }
+  },
   "source": {
     "author": "hand-written fixture",
     "url": "https://example.invalid/tiny.png",

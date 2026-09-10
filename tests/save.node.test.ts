@@ -53,41 +53,34 @@ describe('defaultSetName', () => {
 
 describe('levelsOf', () => {
   it('Right: a ramp is as long as the highest level a colour claims, and it is DERIVED', () => {
-    const set = { colorMap: [{ region: 0, level: 0 }, { region: 1, level: 0 }, { region: 1, level: 3 }] } as SetView;
-    expect(levelsOf(set)['1']!.steps).toBe(4);
+    const set = { positions: [{ region: null, level: 0 }, { region: 'skin', level: 0 }, { region: 'skin', level: 3 }] } as unknown as SetView;
+    expect(levelsOf(set)['skin']!.steps).toBe(4);
   });
 
   it('🔴 Right: outline stays null until a person marks one — it is never guessed', () => {
     // "The darkest step is the outline" is right often enough to be trusted and wrong often enough to
     // matter: a metal outline is not the darkest metal, and nothing downstream could tell a guess from a
     // decision.
-    const set = { colorMap: [{ region: 1, level: 0 }, { region: 1, level: 1 }] } as SetView;
-    expect(levelsOf(set)['1']!.outline).toBeNull();
+    const set = { positions: [{ region: 'skin', level: 0 }, { region: 'skin', level: 1 }] } as unknown as SetView;
+    expect(levelsOf(set)['skin']!.outline).toBeNull();
   });
 });
 
 describe('buildOutputs', () => {
-  it('Right: two files come out, and the set file lists the variants the palette file holds', async () => {
+  it('🔴 Right: ONE file comes out, and it holds the pixels and the colours together', async () => {
+    // ADR-0135. Two files meant a reader could be handed half a resource, and the reuse the split bought
+    // was theoretical: palettes are harvested from the same import that produced the sheets.
     const { draft } = await aDraft();
     const files = buildOutputs(draft);
-    expect(files.map((f) => f.name)).toEqual(['knight.semantic.json', 'knight.palette.json']);
-    expect(parseSet(files[0]!.text).palettes).toEqual(['source']);
-    expect(JSON.parse(files[1]!.text).name).toBe('knight');
+    expect(files.map((f) => f.name)).toEqual(['knight.semantic.json']);
+    expect(Object.keys(parseSet(files[0]!.text).palettes)).toEqual(['source']);
   });
 
-  it('🎯 Right: harvested variants join the SAME palette file rather than each getting one', async () => {
-    // The format is `region → variants → ramp`, so a variant IS a variant entry. Writing one file per
-    // variant would split a structure that is already exactly the right shape, and leave a game loading
-    // four files to offer four team colours.
+  it('🎯 Right: harvested palettes join the same file, under their own names', async () => {
     const { draft } = await aDraft();
-    const red = {
-      schema: 1 as const, name: 'red',
-      regions: { 1: { variants: { red: ['#ff0000ff', '#880000ff'] } } },
-    };
-    const files = buildOutputs({ ...draft, harvested: [red] });
-    expect(files).toHaveLength(2);
-    expect(parseSet(files[0]!.text).palettes).toEqual(['source', 'red']);
-    expect(Object.keys(JSON.parse(files[1]!.text).regions['1'].variants)).toEqual(['source', 'red']);
+    const files = buildOutputs({ ...draft, harvested: { red: { material: ['#ff0000ff', '#880000ff'] } } });
+    expect(files).toHaveLength(1);
+    expect(Object.keys(parseSet(files[0]!.text).palettes)).toEqual(['source', 'red']);
   });
 
   it('Right: the set file is valid on its own terms — it survives the reader that will read it', async () => {
@@ -106,15 +99,18 @@ describe('🔴 annotationProblem — the check that runs before anything is draw
     // Without this the ramp is ambiguous and recomposition takes whichever came last. The person finds out
     // when a game renders their art wrong, which is the worst possible moment and the hardest to trace.
     const { draft, set } = await aDraft();
-    const opaque = set.colorMap.map((m) => (m.region === 0 ? m : { region: 1, level: 0 }));
-    set.colorMap.splice(0, set.colorMap.length, ...opaque);
+    const opaque = set.positions.map((m) => (m.region === null ? m : { region: 'skin', level: 0 }));
+    set.positions.splice(0, set.positions.length, ...opaque);
     expect(annotationProblem(draft)).toMatch(/claimed twice/i);
   });
 
-  it('Boundary: a region used but never named is named as the problem', async () => {
+  it('Boundary: a region used but never described is named as the problem', async () => {
     const { draft, set } = await aDraft();
-    set.colorMap[set.colorMap.findIndex((m) => m.region !== 0)] = { region: 7, level: 0 };
-    expect(annotationProblem(draft)).toMatch(/region 7/);
+    // `levels` is derived from what the positions say, so a region can only go missing if two positions
+    // disagree — which the case above covers. What this pins is that the message NAMES the region.
+    const opaque = set.positions.map((m) => (m.region === null ? m : { region: 'skin', level: 0 }));
+    set.positions.splice(0, set.positions.length, ...opaque);
+    expect(annotationProblem(draft)).toMatch(/"skin"/);
   });
 });
 
@@ -149,9 +145,8 @@ describe('🔴 the round trip, from the surface a person actually touches', () =
 });
 
 describe('🔴 nonMonotonicRamps — warns, and does not refuse', () => {
-  const ramp = (variant: string, colours: string[]) => ({
-    schema: 1 as const, name: 'p', regions: { 1: { variants: { [variant]: colours } } },
-  });
+  const ramp = (variant: string, colours: string[]) =>
+    ({ palettes: { [variant]: { skin: colours } } }) as unknown as Parameters<typeof nonMonotonicRamps>[0];
 
   it('Right: a ramp that climbs shadow-to-light says nothing', () => {
     expect(nonMonotonicRamps(ramp('source', ['#111111ff', '#888888ff', '#eeeeeeff']), 'source')).toEqual([]);
@@ -161,7 +156,7 @@ describe('🔴 nonMonotonicRamps — warns, and does not refuse', () => {
     // Two levels swapped recolours the art with its shading inverted. It looks wrong and it does not fail,
     // which is why something has to say it out loud.
     expect(nonMonotonicRamps(ramp('source', ['#111111ff', '#eeeeeeff', '#888888ff']), 'source'))
-      .toEqual([{ region: '1', at: 2 }]);
+      .toEqual([{ region: 'skin', at: 2 }]);
   });
 
   it('🔴 Boundary: a FLAT ramp is legitimate and says nothing', () => {

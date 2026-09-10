@@ -89,8 +89,10 @@ describe('suggest — the first draft of the annotation, by luminance', () => {
     expect(shadow.level).toBe(0);
   });
 
-  it('Right: nothing is region 0, which is the hole in the picture and never a material', () => {
-    expect(suggest([NOTHING, DARK]).find((p) => p.colour === NOTHING)!.region).toBe(0);
+  it('Right: nothing gets NO region at all — the hole in the picture is never a material', () => {
+    // `null` rather than a word like «nothing», because the region is now free text and a word could
+    // collide with one a person types.
+    expect(suggest([NOTHING, DARK]).find((p) => p.colour === NOTHING)!.region).toBeNull();
   });
 
   it('Right: the proposal is index-aligned with the order it was given', () => {
