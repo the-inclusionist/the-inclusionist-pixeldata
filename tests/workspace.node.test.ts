@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildPng } from './helpers/build-png.ts';
 import { importFiles, type SetView } from '../src/app/import.ts';
-import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn, groupByContainment } from '../src/app/workspace.ts';
+import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn, groupByContainment, chooseBase, unreachableFrom } from '../src/app/workspace.ts';
 import { packColour } from '../src/format/semantic.ts';
 
 /** Two drawings — `walk` and `hurt` — rendered in whichever two colours a palette brings. */
@@ -154,5 +154,56 @@ describe('🔴 groupByContainment — what makes two files the same palette', ()
 
   it('Zero: nothing in gives nothing out', () => {
     expect(groupByContainment([])).toEqual([]);
+  });
+});
+
+describe('🔴 chooseBase — the widest palette is the WORST base', () => {
+  /**
+   * The shape that exposed it, from the real LPC: one palette is wide but its drawing is unique to it, so
+   * nothing can travel to those positions. A narrower palette whose drawings are SHARED loses nothing.
+   */
+  async function lopsided() {
+    const wide = [[10, 10, 10, 255], [20, 20, 20, 255], [30, 30, 30, 255]];
+    const thin = [[90, 90, 90, 255], [80, 80, 80, 255]];
+    // `shared` is the same drawing everywhere. `only-wide` exists in one palette alone and uses the colour
+    // nothing else can reach.
+    const shared = (c: number[][]) =>
+      buildPng({ width: 2, height: 1, colorType: 6, scanlines: [[0, ...c[0]!, ...c[1]!]] });
+    const solo = buildPng({ width: 3, height: 1, colorType: 6, scanlines: [[0, ...wide[0]!, ...wide[1]!, ...wide[2]!]] });
+
+    return importFiles([
+      { name: 'Wide/shared.png', bytes: await shared(wide) },
+      { name: 'Wide/solo.png', bytes: await solo },
+      { name: 'Thin/shared.png', bytes: await shared(thin) },
+    ]);
+  }
+
+  it('🎯 Right: it picks the palette whose drawings are SHARED, not the one with most colours', async () => {
+    const imported = await lopsided();
+    const base = chooseBase(imported)!;
+    // The wide palette carries three positions and can only be reached through the two-colour drawing.
+    expect(base.order.length).toBeLessThan(Math.max(...imported.sets.map((s) => s.order.length)));
+    expect(unreachableFrom(imported, base)).toBe(0);
+  });
+
+  it('Right: it counts what the widest base would have lost', async () => {
+    const imported = await lopsided();
+    const widest = imported.sets.reduce((a, b) => (b.order.length > a.order.length ? b : a));
+    expect(unreachableFrom(imported, widest)).toBeGreaterThan(0);
+  });
+
+  it('Boundary: a palette sharing nothing is not counted against a base it cannot reach', async () => {
+    // It is not a palette of that workspace at all, so charging the base for it would punish a base for a
+    // file that was never going to be swapped into.
+    const imported = await lopsided();
+    const stranger = await importFiles([
+      { name: 'Other/x.png', bytes: await buildPng({ width: 1, height: 1, colorType: 6, scanlines: [[0, 1, 2, 3, 255]] }) },
+    ]);
+    const both = { sets: [...imported.sets, ...stranger.sets], refused: [] };
+    expect(unreachableFrom(both, chooseBase(imported)!)).toBe(0);
+  });
+
+  it('Zero: nothing imported gives no base rather than an error', async () => {
+    expect(chooseBase({ sets: [], refused: [] })).toBeNull();
   });
 });

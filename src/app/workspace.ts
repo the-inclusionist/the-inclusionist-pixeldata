@@ -126,6 +126,62 @@ export function workspaceFor(imported: Imported, base: SetView): Workspace {
   return { base, palettes, drawings };
 }
 
+/**
+ * Which positions of its own set a sheet actually uses — the distinct values of its grid.
+ *
+ * 📌 It is the cheap half of choosing a base. A position is reachable from another palette only through a
+ * drawing the two SHARE, so what a shared drawing uses is exactly what can be translated.
+ */
+export function usedPositions(sheet: SheetView): Set<number> {
+  const used = new Set<number>();
+  for (const index of sheet.grid) used.add(index);
+  return used;
+}
+
+/**
+ * How many positions of `base` no palette in `imported` can reach, summed over the palettes.
+ *
+ * 🔴 THIS IS THE NUMBER THAT SHOULD CHOOSE THE BASE, and taking the WIDEST palette instead — which looked
+ * obvious — is the worst rule available. 📏 Measured in the browser on four LPC palettes of `Human_male`:
+ * Ivory is the widest at 30 positions, and its `walk` is a drawing only Ivory has, so Coffee can reach it
+ * only through `hurt` — which uses 11 of those 30. Nineteen positions went dark on the swap.
+ *
+ * A base is good when its drawings are SHARED, not when its palette is large.
+ */
+export function unreachableFrom(imported: Imported, base: SetView): number {
+  const byDrawing = new Map<string, SheetView>();
+  for (const sheet of base.sheets) byDrawing.set(sheet.drawingHash, sheet);
+
+  let total = 0;
+  for (const other of imported.sets) {
+    if (other === base) continue;
+    const shared = other.sheets.map((sheet) => byDrawing.get(sheet.drawingHash)).filter((s): s is SheetView => !!s);
+    if (shared.length === 0) continue; // not a palette of this workspace at all; it is not counted against it
+
+    const reachable = new Set<number>();
+    for (const sheet of shared) for (const index of usedPositions(sheet)) reachable.add(index);
+    total += base.order.length - reachable.size;
+  }
+  return total;
+}
+
+/**
+ * The palette to annotate against: the one leaving the fewest positions unreachable, and among equals the
+ * widest — because when nothing is lost either way, more positions is more that can be said.
+ */
+export function chooseBase(imported: Imported): SetView | null {
+  let best: SetView | null = null;
+  let bestLoss = Number.POSITIVE_INFINITY;
+  for (const set of imported.sets) {
+    const loss = unreachableFrom(imported, set);
+    if (loss < bestLoss || (loss === bestLoss && best !== null && set.order.length > best.order.length)) {
+      best = set;
+      bestLoss = loss;
+    }
+  }
+  return best;
+}
+
 /** The sheet that is this drawing wearing this palette, or nothing when that palette does not hold it. */
 export function sheetIn(palette: PaletteView, drawing: DrawingView): SheetView | undefined {
   return palette.set.sheets.find((sheet) => sheet.drawingHash === drawing.sheet.drawingHash);

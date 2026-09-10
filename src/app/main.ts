@@ -11,7 +11,7 @@ import {
   artPixels, paintArt, paintColours, paintDrawings, paintPalettes, explain, currentSheet,
   type Selection, type View,
 } from './panels.ts';
-import { workspaceFor } from './workspace.ts';
+import { workspaceFor, chooseBase } from './workspace.ts';
 import {
   buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT,
   type Draft, type OutputFile,
@@ -118,17 +118,13 @@ function renderRefusals(): void {
 }
 
 /**
- * Open the workspace around the palette holding the most positions.
+ * Open the workspace around the palette that leaves the fewest positions unreachable.
  *
- * 📌 The widest is the right base rather than the first: the annotation lives in its index space, so the
- * more positions it has the fewer palettes come back carrying something the correspondence cannot reach.
- * Taking whichever set came first would make the tool's usefulness depend on file-system order.
+ * ⚠️ It used to be the WIDEST palette, which looked obvious and was the worst rule available — see
+ * `unreachableFrom`. A base is good when its drawings are SHARED, not when its palette is large.
  */
 function openWorkspace(): void {
-  const base = imported.sets.reduce<SetView | null>(
-    (widest, set) => (widest === null || set.order.length > widest.order.length ? set : widest),
-    null,
-  );
+  const base = chooseBase(imported);
   if (!base) { selection = null; return; }
 
   const workspace = workspaceFor(imported, base);
