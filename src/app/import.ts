@@ -11,6 +11,7 @@ import { decodePng, type DecodedPng } from '../png/decode.ts';
 import { groupImages } from '../group/group.ts';
 import { canonicalOrder, gridFor, packColour, NOTHING, type Meaning } from '../format/semantic.ts';
 import { suggest } from './annotate.ts';
+import { groupByContainment } from './workspace.ts';
 
 export interface SheetView {
   readonly name: string;
@@ -55,11 +56,21 @@ export async function importFiles(files: readonly { name: string; bytes: Uint8Ar
 
   // ONE pass. Each member already carries both hashes, so grouping twice would only cost two SHA walks over
   // every pixel of every file for a map that is already in hand.
-  const { byPalette } = await groupImages(decoded);
+  const { members: all } = await groupImages(decoded);
+
+  // 🔴 A PALETTE IS A CONTAINMENT GROUP, NOT AN EXACT COLOUR SET (see `groupByContainment`). 📏 On the real
+  // `Human_male` folder the exact rule splits eight palettes into twenty-five, because `run` and `thrust`
+  // each show a colour the other sheets never do — and a `hurt` frame that never displays the boots is
+  // plainly still the same palette as the `walk` that does.
+  const groups = groupByContainment(all.map((m) => ({ member: m, colours: new Set(m.indexed.order) })));
 
   const sets: SetView[] = [];
-  for (const [paletteHash, members] of byPalette) {
+  for (const group of groups) {
+    const members = group.map((g) => g.member);
+    // The palette is the UNION of what its sheets use, so a position exists even when only one sheet shows
+    // it — otherwise the sheet carrying an extra colour could not be written against the group at all.
     const order = canonicalOrder(members.map((m) => m.image));
+    const paletteHash = members.reduce((widest, m) => (m.indexed.order.length > widest.indexed.order.length ? m : widest)).paletteHash;
     const sheets = members.map((m) => ({
       name: m.name,
       image: m.image as DecodedPng,

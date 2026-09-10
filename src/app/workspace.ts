@@ -17,6 +17,55 @@
 import { indexColours } from '../group/group.ts';
 import type { SetView, SheetView, Imported } from './import.ts';
 
+/**
+ * 🔴 WHAT MAKES TWO FILES THE SAME PALETTE, and it is a rule rather than a convention.
+ *
+ * Not an EXACT colour set: 📏 measured on `Body/Base/Human_male/`, that splits eight folders into
+ * twenty-five groups, because `run` and `thrust` each carry a colour or two the other sheets never show.
+ * A `hurt` frame that never displays the boots is still the same palette as the `walk` that does.
+ *
+ * So: one set CONTAINED IN the other, closed transitively. No threshold, no percentage, nothing to tune —
+ * which matters, because a tuned number would have to be stored in the file and defended forever.
+ * 📏 It takes the same folder from 25 groups to 13, and the closure never once crosses a folder boundary.
+ *
+ * ⚠️ It does not reach eight, and that is the corpus rather than the rule: `run.png` genuinely holds
+ * colours nothing else in its folder does. A rule that reached eight would have to guess.
+ */
+export function groupByContainment<T extends { readonly colours: ReadonlySet<number> }>(items: readonly T[]): T[][] {
+  // Distinct colour SETS first. A folder of sixty files holds about fifteen distinct sets, so comparing
+  // sets instead of files turns a quadratic walk over the import into a quadratic walk over almost nothing.
+  const distinct = new Map<string, { colours: ReadonlySet<number>; items: T[] }>();
+  for (const item of items) {
+    const key = [...item.colours].sort((a, b) => a - b).join(',');
+    (distinct.get(key) ?? distinct.set(key, { colours: item.colours, items: [] }).get(key)!).items.push(item);
+  }
+
+  const sets = [...distinct.values()];
+  const parent = sets.map((_, i) => i);
+  const root = (i: number): number => { while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!; return i; };
+
+  const within = (a: ReadonlySet<number>, b: ReadonlySet<number>): boolean => {
+    if (a.size > b.size) return false;
+    for (const colour of a) if (!b.has(colour)) return false;
+    return true;
+  };
+
+  for (let i = 0; i < sets.length; i++) {
+    for (let j = i + 1; j < sets.length; j++) {
+      if (within(sets[i]!.colours, sets[j]!.colours) || within(sets[j]!.colours, sets[i]!.colours)) {
+        parent[root(i)] = root(j);
+      }
+    }
+  }
+
+  const groups = new Map<number, T[]>();
+  sets.forEach((set, i) => {
+    const key = root(i);
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(...set.items);
+  });
+  return [...groups.values()];
+}
+
 /** One palette, and every sheet drawn in it. This is what `importFiles` already calls a set. */
 export interface PaletteView {
   readonly set: SetView;

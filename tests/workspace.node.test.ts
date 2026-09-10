@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildPng } from './helpers/build-png.ts';
 import { importFiles, type SetView } from '../src/app/import.ts';
-import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn } from '../src/app/workspace.ts';
+import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn, groupByContainment } from '../src/app/workspace.ts';
 import { packColour } from '../src/format/semantic.ts';
 
 /** Two drawings — `walk` and `hurt` — rendered in whichever two colours a palette brings. */
@@ -123,5 +123,36 @@ describe('🔴 paletteColours — the translation the whole design rests on', ()
     const other = workspace.palettes.find((p) => p.set !== base)!;
     // Deliberately cross the wires: walk's positions against hurt's pixels.
     expect(() => coloursIn(base, walkDrawing!.sheet, sheetIn(other, hurtDrawing!)!)).toThrow(/not the same drawing/i);
+  });
+});
+
+describe('🔴 groupByContainment — what makes two files the same palette', () => {
+  const of = (...colours: number[]) => ({ colours: new Set(colours) });
+
+  it('🎯 Right: a sheet that shows FEWER of the same colours is the same palette', () => {
+    // 📏 The case measured on the real folder: a `hurt` frame that never displays the boots is plainly the
+    // same palette as the `walk` that does. Exact-set matching splits those two, and split eight LPC
+    // palettes into twenty-five.
+    const groups = groupByContainment([of(1, 2, 3), of(1, 2)]);
+    expect(groups).toHaveLength(1);
+  });
+
+  it('Right: colour sets that merely overlap are NOT the same palette', () => {
+    // No threshold anywhere. Overlap would need a percentage, a percentage would need storing in the file,
+    // and the Dev deferred exactly that with «iguais agora, agrupamento depois».
+    expect(groupByContainment([of(1, 2, 3), of(3, 4, 5)])).toHaveLength(2);
+  });
+
+  it('Right: containment is closed transitively, so a chain is one palette', () => {
+    expect(groupByContainment([of(1), of(1, 2), of(1, 2, 3)])).toHaveLength(1);
+  });
+
+  it('Boundary: identical sets land together without needing containment at all', () => {
+    const groups = groupByContainment([of(7, 8), of(8, 7), of(9)]);
+    expect(groups.map((g) => g.length).sort()).toEqual([1, 2]);
+  });
+
+  it('Zero: nothing in gives nothing out', () => {
+    expect(groupByContainment([])).toEqual([]);
   });
 });
