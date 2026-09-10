@@ -9,6 +9,7 @@
 import { isolate } from './annotate.ts';
 import { annotationProblem, difference, recomposedPixels, type Draft } from './save.ts';
 import { unpack, type SetView, type SheetView } from './import.ts';
+import type { Variant } from './variants.ts';
 import { NOTHING } from '../format/semantic.ts';
 import { t } from './i18n.ts';
 
@@ -88,6 +89,51 @@ export function paintSet(host: HTMLElement, selection: Selection, onPick: (index
     list.append(item);
   });
 
+  host.replaceChildren(list);
+}
+
+/**
+ * PANEL 4 — the same drawing wearing other palettes, and the button that harvests one.
+ *
+ * 🎯 This is the panel that pays for the tool. 📏 34 groups of these in the 197-file sample covering 100
+ * files: every troop and building in four team colours. One annotation, ninety-nine readings.
+ */
+export function paintVariants(
+  host: HTMLElement,
+  variants: readonly Variant[],
+  taken: ReadonlySet<string>,
+  onHarvest: (variant: Variant) => void,
+): void {
+  if (variants.length === 0) { host.replaceChildren(); return; }
+  const list = document.createElement('ul');
+  list.className = 'thumbs';
+
+  for (const variant of variants) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'thumb';
+    const already = taken.has(variant.name);
+    if (already) button.classList.add('is-taken');
+    button.setAttribute('aria-pressed', String(already));
+
+    const canvas = document.createElement('canvas');
+    // The variant is drawn from its OWN pixels: the person is choosing between colours, so showing them
+    // through this set's palette would show them the thing they are trying to tell apart, twice.
+    const rgba = new Uint8Array(variant.image.rgba);
+    canvas.width = variant.image.width;
+    canvas.height = variant.image.height;
+    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), variant.image.width, variant.image.height), 0, 0);
+
+    const name = document.createElement('span');
+    name.className = 'thumb-name';
+    name.textContent = already ? `✓ ${variant.name}` : variant.name;
+
+    button.append(canvas, name);
+    button.addEventListener('click', () => onHarvest(variant));
+    item.append(button);
+    list.append(item);
+  }
   host.replaceChildren(list);
 }
 

@@ -6,9 +6,10 @@
 // can do: read a file the person chose, hand a click back, and write a file where they say.
 import { applyTranslations, setLanguage, t, LANGUAGES, type Language } from './i18n.ts';
 import { importFiles, type Imported, type SetView } from './import.ts';
-import { artPixels, paintArt, paintColours, paintSet, explain, type Selection, type View } from './panels.ts';
+import { artPixels, paintArt, paintColours, paintSet, paintVariants, explain, type Selection, type View } from './panels.ts';
+import { variantsFor, harvestFromVariant, variantName, type Variant } from './variants.ts';
 import { buildOutputs, defaultSetName, annotationProblem, type Draft, type OutputFile } from './save.ts';
-import type { Provenance } from '../format/semantic.ts';
+import type { Palette, Provenance } from '../format/semantic.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -19,6 +20,8 @@ function isLanguage(value: string): value is Language {
 let imported: Imported = { sets: [], refused: [] };
 let selection: Selection | null = null;
 let notice = '';
+/** Palettes harvested in panel 4, per set. They ride along into the one palette file the set writes. */
+const harvested = new Map<SetView, { palette: Palette; from: string }[]>();
 
 function provenance(): Provenance {
   return {
@@ -31,7 +34,42 @@ function provenance(): Provenance {
   };
 }
 
-const draftOf = (set: SetView): Draft => ({ name: $<HTMLInputElement>('set-name').value || 'set', set, source: provenance() });
+const draftOf = (set: SetView): Draft => ({
+  name: $<HTMLInputElement>('set-name').value || 'set',
+  set,
+  source: provenance(),
+  harvested: (harvested.get(set) ?? []).map((h) => h.palette),
+});
+
+/**
+ * ⚠️ HARVESTING IS A TOGGLE. Clicking a variant that is already taken removes it, because a variant added by
+ * mistake would otherwise be stuck in the palette file with no way to take it out but starting over.
+ */
+function harvest(variant: Variant): void {
+  if (!selection) return;
+  const set = selection.set;
+  const taken = harvested.get(set) ?? [];
+  const already = taken.findIndex((h) => h.from === variant.name);
+  if (already >= 0) {
+    taken.splice(already, 1);
+    harvested.set(set, taken);
+    notice = '';
+    render();
+    return;
+  }
+  try {
+    const name = variantName($<HTMLInputElement>('set-name').value || 'set', variant.name);
+    const { palette, missing } = harvestFromVariant(set, variant, name);
+    taken.push({ palette, from: variant.name });
+    harvested.set(set, taken);
+    notice = missing.length === 0
+      ? `${t('harvest.done')} ${name}`
+      : `${t('harvest.partial')} ${name} (${missing.length})`;
+  } catch (error) {
+    notice = error instanceof Error ? error.message : String(error);
+  }
+  render();
+}
 
 /** Rebuild everything from the current state. Small enough to redraw whole; big enough to be one function. */
 function render(): void {
@@ -48,6 +86,7 @@ function render(): void {
     problem.hidden = true;
     $('colours').replaceChildren();
     $('set').replaceChildren();
+    $('variants').replaceChildren();
   } else {
     const drawn = artPixels(selection, draftOf(selection.set));
     if ('problem' in drawn) {
@@ -69,6 +108,12 @@ function render(): void {
       onLevel: (index, level) => { selection!.set.colorMap[index] = { region: selection!.set.colorMap[index]!.region, level }; render(); },
     });
     paintSet($('set'), selection, (index) => { select(imported.sets.indexOf(selection!.set), index); render(); });
+    paintVariants(
+      $('variants'),
+      variantsFor(imported, selection.set),
+      new Set((harvested.get(selection.set) ?? []).map((h) => h.from)),
+      harvest,
+    );
   }
 
   const tail = notice || t('state.notWired');
@@ -186,6 +231,7 @@ function start(): void {
       await Promise.all(chosen.map(async (file) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }))),
     );
     notice = '';
+    harvested.clear();
     fillChooser();
     select(0, 0);
     render();

@@ -36,7 +36,7 @@ One file per **set** — the sheets that share a palette.
     { "region": 1, "level": 0 },
     { "region": 1, "level": 1 }
   ],
-  "palettes": ["human-coffee", "human-amber"],
+  "palettes": ["source", "coffee", "amber"],
   "source": {
     "author": "…", "url": "https://…", "door": "bridge",
     "licence": "CC-BY-SA-3.0", "outgoingLicence": "GPL-3.0-only", "derivedFrom": "…"
@@ -50,7 +50,7 @@ One file per **set** — the sheets that share a palette.
 | `levels` | per region: how many steps its ramp has, and which step index is the outline (`null` if none). |
 | `sheets[].grid` | one string per row of pixels, runs written `<count>x<index>`. |
 | `colorMap` | indexed by canonical colour index: what that index MEANS. The record of the human decision. |
-| `palettes` | ids of palettes known to fit — harvested from variants of the same drawing. |
+| `palettes` | the variant NAMES the companion `<set>.palette.json` holds — `source` first, then each harvested one. |
 | `source` | the fields of `art/ATTRIBUTION.csv`, so the ledger is generated rather than written by hand. |
 
 ### The index is the set's canonical order
@@ -90,13 +90,22 @@ working-tree bytes only. A reader must **refuse** a row that does not add up rat
 ```json
 {
   "schema": 1,
-  "name": "human-coffee",
+  "name": "human",
   "regions": {
-    "1": { "variants": { "coffee": ["#3b2418ff", "#6b4530ff", "#9c6a4dff", "#140c08ff"] } },
-    "2": { "variants": { "soft": ["#0000005a"] } }
+    "1": {
+      "variants": {
+        "source": ["#3b2418ff", "#6b4530ff", "#9c6a4dff", "#140c08ff"],
+        "amber":  ["#4a2c14ff", "#82552cff", "#bb8148ff", "#1a0f06ff"]
+      }
+    },
+    "2": { "variants": { "source": ["#0000005a"], "amber": ["#0000005a"] } }
   }
 }
 ```
+
+🎯 **One file per SET, not per variant.** The structure is already `region → variants → ramp`, so a variant
+is exactly what a variant entry is for; splitting it would leave a game loading four files to offer four
+team colours. Every harvested variant joins this file.
 
 `regions[regionId].variants[variantName][level]` is a colour written `#rrggbbaa`.
 
@@ -113,6 +122,25 @@ That is a shadow at a constant alpha, not anti-aliasing — so a shadow is annot
 hard 0-or-255 mask would have rejected sixty per cent of a real pack.
 
 ---
+
+## Harvesting a variant
+
+🎯 **The mechanism that makes a large asset pack affordable.** Two files with the same drawing — the same
+grid of first-appearance colour indices — name the same steps in the same order. So if index `i` of the
+annotated sheet was called `(skin, 3)`, the colour at index `i` of any file with that same drawing IS level 3
+of skin in that variant. No matching, no nearest-colour, nothing approximate.
+
+📏 Verified over the 197-file sample: **218 harvests, 218 exact, 107 118 592 pixels recoloured and compared**
+against the file each palette came from.
+
+⚠️ **THE TWO ORDERINGS MUST NOT BE CONFUSED.** `colorMap` is indexed by the set's CANONICAL order (its
+colours, sorted). The correspondence between an annotated sheet and a variant runs through FIRST APPEARANCE.
+A reader that harvests must translate between them, and a reader that only recomposes never needs the second
+one at all.
+
+⚠️ A variant can only fill the steps the ANNOTATED sheet itself uses. When another sheet of the set brings a
+colour the annotated one never shows, the variant has nothing to say about that step — it must be reported
+as missing, never filled with a nearby colour.
 
 ## The round trip, and the one thing it does not preserve
 

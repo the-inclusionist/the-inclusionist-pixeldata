@@ -195,3 +195,6 @@ body {
 }
 .save button { justify-self: start; cursor: pointer; padding: 0.4rem 0.8rem; }
 .save button:hover { border-color: var(--accent); }
+
+/* A variant already harvested is marked, because clicking again REMOVES it and that has to be visible. */
+.thumb.is-taken { border-color: #7fe0a0; color: #7fe0a0; }

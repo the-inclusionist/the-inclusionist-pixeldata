@@ -67,12 +67,27 @@ describe('levelsOf', () => {
 });
 
 describe('buildOutputs', () => {
-  it('Right: two files come out, and the set file names the palette it was harvested with', async () => {
+  it('Right: two files come out, and the set file lists the variants the palette file holds', async () => {
     const { draft } = await aDraft();
     const files = buildOutputs(draft);
     expect(files.map((f) => f.name)).toEqual(['knight.semantic.json', 'knight.palette.json']);
-    expect(parseSet(files[0]!.text).palettes).toEqual(['knight.source']);
-    expect(JSON.parse(files[1]!.text).name).toBe('knight.source');
+    expect(parseSet(files[0]!.text).palettes).toEqual(['source']);
+    expect(JSON.parse(files[1]!.text).name).toBe('knight');
+  });
+
+  it('🎯 Right: harvested variants join the SAME palette file rather than each getting one', async () => {
+    // The format is `region → variants → ramp`, so a variant IS a variant entry. Writing one file per
+    // variant would split a structure that is already exactly the right shape, and leave a game loading
+    // four files to offer four team colours.
+    const { draft } = await aDraft();
+    const red = {
+      schema: 1 as const, name: 'red',
+      regions: { 1: { variants: { red: ['#ff0000ff', '#880000ff'] } } },
+    };
+    const files = buildOutputs({ ...draft, harvested: [red] });
+    expect(files).toHaveLength(2);
+    expect(parseSet(files[0]!.text).palettes).toEqual(['source', 'red']);
+    expect(Object.keys(JSON.parse(files[1]!.text).regions['1'].variants)).toEqual(['source', 'red']);
   });
 
   it('Right: the set file is valid on its own terms — it survives the reader that will read it', async () => {

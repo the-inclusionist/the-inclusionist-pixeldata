@@ -46,7 +46,7 @@ const PT_BR: Dictionary = {
   'explain.sheets': 'folhas no conjunto',
   'explain.isolated': 'isolada',
   'explain.refused': 'ficheiros recusados',
-  'state.notWired': 'O painel 4 ainda não está ligado.',
+  'state.notWired': 'Os quatro painéis estão ligados.',
   'view.legend': 'O que o painel mostra',
   'view.original': 'Original',
   'view.recomposed': 'Recomposto',
@@ -61,6 +61,8 @@ const PT_BR: Dictionary = {
   'save.done': 'Gravado:',
   'save.cancelled': 'Gravação cancelada.',
   'save.blocked': 'A anotação ainda não fecha, por isso nada foi gravado:',
+  'harvest.done': 'Paleta colhida:',
+  'harvest.partial': 'Paleta colhida em parte, degraus por preencher:',
 };
 
 const EN: Dictionary = {
@@ -96,7 +98,7 @@ const EN: Dictionary = {
   'explain.sheets': 'sheets in the set',
   'explain.isolated': 'isolated',
   'explain.refused': 'files refused',
-  'state.notWired': 'Panel 4 is not wired up yet.',
+  'state.notWired': 'All four panels are wired.',
   'view.legend': 'What the panel is showing',
   'view.original': 'Original',
   'view.recomposed': 'Recomposed',
@@ -111,6 +113,8 @@ const EN: Dictionary = {
   'save.done': 'Saved:',
   'save.cancelled': 'Saving cancelled.',
   'save.blocked': 'The annotation does not close yet, so nothing was saved:',
+  'harvest.done': 'Palette harvested:',
+  'harvest.partial': 'Palette harvested in part, steps left unfilled:',
 };
 
 const ES: Dictionary = {
@@ -146,7 +150,7 @@ const ES: Dictionary = {
   'explain.sheets': 'hojas en el conjunto',
   'explain.isolated': 'aislado',
   'explain.refused': 'archivos rechazados',
-  'state.notWired': 'El panel 4 aún no está conectado.',
+  'state.notWired': 'Los cuatro paneles están conectados.',
   'view.legend': 'Lo que muestra el panel',
   'view.original': 'Original',
   'view.recomposed': 'Recompuesto',
@@ -161,6 +165,8 @@ const ES: Dictionary = {
   'save.done': 'Guardado:',
   'save.cancelled': 'Guardado cancelado.',
   'save.blocked': 'La anotación aún no cierra, así que no se guardó nada:',
+  'harvest.done': 'Paleta cosechada:',
+  'harvest.partial': 'Paleta cosechada en parte, pasos sin rellenar:',
 };
 
 const DICTIONARIES: Readonly<Record<Language, Dictionary>> = { 'pt-BR': PT_BR, en: EN, es: ES };

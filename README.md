@@ -9,9 +9,9 @@ contrast by *reading* what a shape is rather than guessing from its brightness.
 
 It does not draw pixel art. It imports art that exists, helps a person annotate it, and writes files.
 
-## ⚠️ What exists today, and what does not
+## What exists today
 
-**This is not usable yet.** The four panels are in the page and none of them is wired.
+**All four panels are wired, and the tool can take a folder of pixel art through to two files on disk.**
 
 What does work, and is proved rather than claimed:
 
@@ -24,10 +24,18 @@ What does work, and is proved rather than claimed:
   alpha and any colour-management chunks.
 - **The two groupings** (`src/group/group.ts`), which are what make the whole thing pay for itself. Each file
   is reduced to two exact summaries — one over its grid of colour indices, one over its set of colours — and
-  those two comparisons are what panels 3 and 4 will read, with no tolerance and no parameter anywhere.
+  those two comparisons are what panels 3 and 4 read, with no tolerance and no parameter anywhere.
   📏 Run over the 197 CC0 files of [`docs/MEASUREMENT.md`](docs/MEASUREMENT.md) it reproduces that
   measurement exactly — **34 «same drawing» groups covering 100 files, 42 «same palette» groups covering
   139** — from a second implementation written afterwards from tests, which is why the figures are trusted.
+- **The four panels.** The sheet at 4× with one colour singled out and the rest dropped to grey; the colour
+  table where the meaning is decided; the set that shares this palette; and the same drawing in other
+  palettes, each one clickable to **harvest** its ramps.
+- **The format, written and read** ([`docs/FORMAT.md`](docs/FORMAT.md)), with the round trip watched on
+  screen: the «recomposed» view goes the long way — written to text, read back, rebuilt from the palette —
+  and «difference» lights up where the two disagree, so an empty panel is the proof.
+  📏 Verified over the same 197 files: **41 512 960 pixels compared and 197 of 197 identical**, plus
+  **218 palette harvests, all exact, over 107 118 592 recoloured pixels**.
 
 The scaffold sentence that used to stand here — *"this has not been built"* — was removed by the commit that
 made it false, which is the rule that put it there
@@ -49,14 +57,14 @@ so until it exists, the door is described and shut.
 
 ## What comes next
 
-- **`docs/FORMAT.md`** — the written specification of `<set>.semantic.json` and `<name>.palette.json`, plus
-  `fixtures/` to go with it. It is the contract: the engine writes its own reader against it, and nothing
-  else holds the two implementations together.
-- **A round trip that is exact**, born red with its mutation confirmed: PNG → semantic file plus palette →
-  recomposed → the same pixel. It is the case that catches the two corruptions that fail in silence, colour
-  management and alpha premultiplication.
-- **The panels themselves**, and with them the axe gate in `.github/workflows/ci.yml`, which stays `false`
-  until there is a page worth auditing and somebody has watched it pass.
+- **Opening a folder at once**, rather than a file picker one selection at a time. It is the last thing
+  standing between the tool and a real asset pack.
+- **`fixtures/`** — reference files the engine's future reader must reproduce exactly. `docs/FORMAT.md` is
+  the contract; the fixtures are what makes it checkable from the other side.
+- **The axe gate** in `.github/workflows/ci.yml`, which stays `false` until somebody has watched it pass.
+  There is now a page worth auditing, so this is a debt rather than a placeholder.
+- **Frames and pivots.** The format carries them and nothing fills them in yet; a spritesheet is annotated
+  as one image until it does.
 
 ## Running it
 

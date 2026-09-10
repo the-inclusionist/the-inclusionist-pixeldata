@@ -59,6 +59,24 @@ export interface Draft {
   readonly name: string;
   readonly set: SetView;
   readonly source: Provenance;
+  /**
+   * Palettes harvested from variants of the same drawing (panel 4). They go into the SAME palette file as
+   * the source, because the format is `region → variants → ramp` and a variant is exactly what a variant
+   * entry is for — one file per variant would be splitting a structure that is already the right shape.
+   */
+  readonly harvested?: readonly Palette[];
+}
+
+/** Fold several palettes into one, keeping every variant of every region. */
+export function mergePalettes(name: string, palettes: readonly Palette[]): Palette {
+  const regions: Record<string, { variants: Record<string, readonly string[]> }> = {};
+  for (const palette of palettes) {
+    for (const [id, region] of Object.entries(palette.regions)) {
+      const target = (regions[id] ??= { variants: {} });
+      Object.assign(target.variants, region.variants);
+    }
+  }
+  return { schema: 1, name, regions };
 }
 
 export function toSemanticSet(draft: Draft): SemanticSet {
@@ -68,16 +86,31 @@ export function toSemanticSet(draft: Draft): SemanticSet {
     colorMap: draft.set.colorMap,
     regions: Object.fromEntries(Object.entries(draft.set.regionNames).map(([id, name]) => [id, name])),
     levels: levelsOf(draft.set),
-    palettes: [`${draft.name}.${SOURCE_VARIANT}`],
+    palettes: variantNames(draft),
     source: draft.source,
   });
 }
 
+/** Every variant this set can be worn in, `source` first because it is the one that reproduces the art. */
+export function variantNames(draft: Draft): string[] {
+  const harvested = (draft.harvested ?? []).map((p) => p.name);
+  return [SOURCE_VARIANT, ...harvested];
+}
+
 export function toPalette(draft: Draft): Palette {
-  return {
-    ...harvestPalette(toSemanticSet(draft), draft.set.order, SOURCE_VARIANT),
-    name: `${draft.name}.${SOURCE_VARIANT}`,
-  };
+  // ⚠️ The source palette is harvested from a set built WITHOUT the palette list, or the two would define
+  // each other. Only `colorMap` and the canonical order matter to the harvest, and neither depends on it.
+  const bare = buildSet({
+    sheets: draft.set.sheets.map((sheet) => ({ name: sheet.name, image: sheet.image })),
+    order: draft.set.order,
+    colorMap: draft.set.colorMap,
+    regions: draft.set.regionNames as unknown as Record<string, string>,
+    levels: levelsOf(draft.set),
+    palettes: [],
+    source: draft.source,
+  });
+  const source = harvestPalette(bare, draft.set.order, SOURCE_VARIANT);
+  return mergePalettes(draft.name, [source, ...(draft.harvested ?? [])]);
 }
 
 /** The two files, ready to be written wherever the person chooses. */
