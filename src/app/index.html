@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!--
+  THE THREE ZONES, and they are a decision rather than a layout (CLAUDE.md, by Gestalt): accessibility lives
+  in the HEADER, the work lives in the WORKSPACE, and THE EXPLANATION LIVES IN THE FOOTER and stays there.
+  Function separates; proximity does not group. With the zones written down, "it is nearby" stops being a
+  reason to move anything.
+
+  ⚠️ THE FOUR PANELS ARE PRESENT AND NOT WIRED. They are marked as such in the footer, in words, because a
+  panel that renders an empty box teaches a visitor that the tool is broken rather than unfinished.
+-->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pixeldata</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="zone-accessibility" data-i18n-label="zone.accessibility">
+  <h1 data-i18n="app.title">pixeldata</h1>
+  <p class="tagline" data-i18n="app.tagline"></p>
+  <label class="lang">
+    <span data-i18n="lang.label"></span>
+    <select id="lang">
+      <option value="pt-BR">Português (BR)</option>
+      <option value="en">English</option>
+      <option value="es">Español</option>
+    </select>
+  </label>
+</header>
+
+<main class="zone-work" data-i18n-label="zone.work">
+  <div class="import">
+    <label class="btn" for="files" data-i18n="import.label"></label>
+    <input id="files" type="file" accept="image/png" multiple hidden>
+    <p class="hint" data-i18n="import.hint"></p>
+  </div>
+
+  <div class="panels">
+    <section class="panel panel--art" aria-labelledby="h-art">
+      <h2 id="h-art" data-i18n="panel.art"></h2>
+      <div id="art" class="body"></div>
+    </section>
+
+    <section class="panel panel--colors" aria-labelledby="h-colors">
+      <h2 id="h-colors" data-i18n="panel.colors"></h2>
+      <div id="colors" class="body"></div>
+    </section>
+
+    <section class="panel panel--set" aria-labelledby="h-set">
+      <h2 id="h-set" data-i18n="panel.samePalette"></h2>
+      <div id="set" class="body"></div>
+    </section>
+
+    <section class="panel panel--variants" aria-labelledby="h-variants">
+      <h2 id="h-variants" data-i18n="panel.sameDrawing"></h2>
+      <div id="variants" class="body"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="zone-explanation">
+  <h2 class="visually-hidden" data-i18n="zone.explanation"></h2>
+  <p id="explain" aria-live="polite" data-i18n="state.notBuilt"></p>
+</footer>
+
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

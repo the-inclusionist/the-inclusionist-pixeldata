@@ -1,0 +1,94 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+  Three zones, and the CSS says so: the header is accessibility, the grid is work, the footer is explanation.
+  ⚠️ Colours here are placeholders. This tool will be looked at for hours by somebody annotating art, and a
+  contrast audit belongs with the panels rather than with a shell that shows one list.
+*/
+:root {
+  --bg: #0b1020;
+  --panel: #161c2e;
+  --ink: #eef1f7;
+  --muted: #9aa3b8;
+  --line: #2a3350;
+  --accent: #ffd23f;
+  --problem: #ff8f6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- header: accessibility ---- */
+.zone-accessibility {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.zone-accessibility h1 { font-size: 1.05rem; margin: 0; }
+.tagline { margin: 0; color: var(--muted); flex: 1 1 20rem; }
+.lang { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); }
+.lang select {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.25rem 0.4rem; font: inherit;
+}
+
+/* ---- main: the work ---- */
+.zone-work { padding: 1rem; display: grid; gap: 1rem; align-content: start; }
+.import { display: grid; gap: 0.4rem; justify-items: start; }
+.btn {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.45rem 0.8rem; cursor: pointer; font: inherit;
+}
+.btn:hover, .btn:focus-within { border-color: var(--accent); }
+.hint { margin: 0; color: var(--muted); }
+
+.panels {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.7rem 0.9rem;
+  min-height: 8rem;
+}
+.panel h2 { font-size: 0.9rem; margin: 0 0 0.5rem; color: var(--accent); }
+/* The image panel is where the art lives, so it gets the room when there is room to give. */
+.panel--art { grid-column: 1 / -1; }
+
+.facts { list-style: none; margin: 0.3rem 0 0; padding: 0; display: grid; gap: 0.2rem; }
+.facts li { display: flex; gap: 0.6rem; justify-content: space-between; }
+.facts .k { color: var(--muted); }
+.problem { color: var(--problem); margin: 0.3rem 0 0; }
+
+/* ---- footer: the explanation, and it stays here ---- */
+.zone-explanation {
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.zone-explanation p { margin: 0; }
