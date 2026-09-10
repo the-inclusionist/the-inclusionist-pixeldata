@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildPng } from './helpers/build-png.ts';
 import { importFiles, type SetView } from '../src/app/import.ts';
-import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn, groupByContainment, chooseBase, unreachableFrom } from '../src/app/workspace.ts';
+import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn, groupByContainment, chooseBase, unreachableFrom, filesCovered, workspacesIn } from '../src/app/workspace.ts';
 import { packColour } from '../src/format/semantic.ts';
 
 /** Two drawings — `walk` and `hurt` — rendered in whichever two colours a palette brings. */
@@ -178,32 +178,97 @@ describe('🔴 chooseBase — the widest palette is the WORST base', () => {
     ]);
   }
 
-  it('🎯 Right: it picks the palette whose drawings are SHARED, not the one with most colours', async () => {
+  it('🎯 Right: it takes the base that describes the most FILES, even at the cost of some positions', async () => {
+    // The wide palette covers three files — including `solo.png`, which exists nowhere else — while the
+    // thin one covers two and could never describe `solo.png` at all. Losing a few positions on a swap is
+    // the right price for keeping a whole file in scope, and the loss-minimising rule could not weigh that.
     const imported = await lopsided();
     const base = chooseBase(imported)!;
-    // The wide palette carries three positions and can only be reached through the two-colour drawing.
-    expect(base.order.length).toBeLessThan(Math.max(...imported.sets.map((s) => s.order.length)));
-    expect(unreachableFrom(imported, base)).toBe(0);
+    expect(filesCovered(imported, base)).toBe(3);
+    expect(unreachableFrom(imported, base)).toBeGreaterThan(0); // and that is accepted, not avoided
   });
 
-  it('Right: it counts what the widest base would have lost', async () => {
+  it('Right: the loss is still counted, and still reported', async () => {
     const imported = await lopsided();
     const widest = imported.sets.reduce((a, b) => (b.order.length > a.order.length ? b : a));
     expect(unreachableFrom(imported, widest)).toBeGreaterThan(0);
   });
 
-  it('Boundary: a palette sharing nothing is not counted against a base it cannot reach', async () => {
-    // It is not a palette of that workspace at all, so charging the base for it would punish a base for a
-    // file that was never going to be swapped into.
+  it('Boundary: a palette sharing nothing does not change what a base is charged', async () => {
+    // It is not in that workspace at all, so it must not move the number either way — charging a base for a
+    // file that was never going to be swapped into would make an unrelated import change the choice.
     const imported = await lopsided();
     const stranger = await importFiles([
       { name: 'Other/x.png', bytes: await buildPng({ width: 1, height: 1, colorType: 6, scanlines: [[0, 1, 2, 3, 255]] }) },
     ]);
+    const base = chooseBase(imported)!;
     const both = { sets: [...imported.sets, ...stranger.sets], refused: [] };
-    expect(unreachableFrom(both, chooseBase(imported)!)).toBe(0);
+    expect(unreachableFrom(both, base)).toBe(unreachableFrom(imported, base));
   });
 
   it('Zero: nothing imported gives no base rather than an error', async () => {
     expect(chooseBase({ sets: [], refused: [] })).toBeNull();
+  });
+});
+
+describe('🔴 filesCovered and workspacesIn — an import is not one workspace', () => {
+  /**
+   * 📏 The shape measured on the LPC's `Body/Base`: 269 files that partition into ELEVEN groups nothing can
+   * travel between. Here it is in miniature — a big family of palettes, and a loner nobody shares with.
+   */
+  async function twoFamilies() {
+    const shape = (a: number[], b: number[]) =>
+      buildPng({ width: 2, height: 1, colorType: 6, scanlines: [[0, ...a, ...b]] });
+    const other = (a: number[], b: number[]) =>
+      buildPng({ width: 2, height: 1, colorType: 6, scanlines: [[0, ...b, ...a]] });
+
+    const files: { name: string; bytes: Uint8Array }[] = [];
+    for (const [name, c] of [['Coffee', COFFEE], ['Ivory', IVORY], ['Gold', GOLD]] as const) {
+      files.push({ name: `Human/${name}/walk.png`, bytes: await shape(c[0]!, c[1]!) });
+      files.push({ name: `Human/${name}/hurt.png`, bytes: await other(c[0]!, c[1]!) });
+    }
+    // A lone body: many colours, shared with nobody. It is the shape that broke the old rule.
+    files.push({
+      name: 'Skeleton/Bone/walk.png',
+      bytes: await buildPng({
+        width: 4, height: 1, colorType: 6,
+        scanlines: [[0, 1, 1, 1, 255, 2, 2, 2, 255, 3, 3, 3, 255, 4, 4, 4, 255]],
+      }),
+    });
+    return importFiles(files);
+  }
+
+  it('🔴 Right: an isolated palette covers only ITSELF, however wide it is', async () => {
+    const imported = await twoFamilies();
+    const lone = imported.sets.find((s) => s.sheets[0]!.name.startsWith('Skeleton'))!;
+    expect(filesCovered(imported, lone)).toBe(1);
+    expect(unreachableFrom(imported, lone)).toBe(0); // ⚠️ zero, and it means NOTHING TO LOSE
+  });
+
+  it('🎯 Right: chooseBase takes the one describing the most FILES, not the one losing least', async () => {
+    // The old rule picked the loner because its loss was zero. Counting files cannot be gamed by having
+    // nothing to lose: an isolated palette covers one file, and the family covers six.
+    const imported = await twoFamilies();
+    const base = chooseBase(imported)!;
+    expect(base.sheets[0]!.name.startsWith('Human')).toBe(true);
+    expect(filesCovered(imported, base)).toBeGreaterThan(1);
+  });
+
+  it('🔴 Right: the import partitions into workspaces, biggest first', async () => {
+    const imported = await twoFamilies();
+    const spaces = workspacesIn(imported);
+    expect(spaces.length).toBeGreaterThanOrEqual(2);
+    expect(spaces[0]!.files).toBeGreaterThan(spaces[spaces.length - 1]!.files);
+    // Showing only the first and saying nothing is how an import looks smaller than it is.
+    expect(spaces.reduce((n, w) => n + w.files, 0)).toBe(7);
+  });
+
+  it('Right: every workspace carries how many files it covers', async () => {
+    const spaces = workspacesIn(await twoFamilies());
+    expect(spaces.every((w) => w.files >= 1)).toBe(true);
+  });
+
+  it('Zero: nothing imported gives no workspaces rather than an error', () => {
+    expect(workspacesIn({ sets: [], refused: [] })).toEqual([]);
   });
 });

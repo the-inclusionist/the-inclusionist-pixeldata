@@ -261,6 +261,7 @@ export function explain(selection: Selection | null, refused: number, unreachabl
     `${t('explain.images')}: ${workspace.drawings.length}`,
     `${t('explain.palettes')}: ${workspace.palettes.length}`,
     `${t('explain.positions')}: ${workspace.base.order.length}`,
+    `${t('workspace.files')}: ${workspace.files}`,
   ];
   if (isolated !== null) {
     parts.push(`${t('explain.isolated')}: ${describe(paletteColours(workspace, palette)[isolated])}`);

@@ -11,7 +11,7 @@ import {
   artPixels, paintArt, paintColours, paintDrawings, paintPalettes, explain, currentSheet,
   type Selection, type View,
 } from './panels.ts';
-import { workspaceFor, chooseBase } from './workspace.ts';
+import { workspacesIn, type Workspace } from './workspace.ts';
 import {
   buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT,
   type Draft, type OutputFile,
@@ -26,6 +26,8 @@ function isLanguage(value: string): value is Language {
 }
 
 let imported: Imported = { sets: [], refused: [] };
+/** 🔴 An import is NOT one workspace — see `workspacesIn`. Biggest first, and the person can change. */
+let workspaces: Workspace[] = [];
 let selection: Selection | null = null;
 let notice = '';
 
@@ -118,20 +120,40 @@ function renderRefusals(): void {
 }
 
 /**
- * Open the workspace around the palette that leaves the fewest positions unreachable.
+ * Point the panels at one workspace.
  *
- * ⚠️ It used to be the WIDEST palette, which looked obvious and was the worst rule available — see
- * `unreachableFrom`. A base is good when its drawings are SHARED, not when its palette is large.
+ * ⚠️ TWO RULES DIED BEFORE THIS ONE, both on real art. «The WIDEST palette» picked one whose drawings nobody
+ * shared. «The one that LOSES LEAST» picked the Skeleton out of 269 LPC body sheets — loss zero, because it
+ * shares a drawing with nothing at all. The measure is now how many FILES an annotation would describe, and
+ * it cannot be gamed by having nothing.
  */
-function openWorkspace(): void {
-  const base = chooseBase(imported);
-  if (!base) { selection = null; return; }
+function openWorkspace(index: number): void {
+  const workspace = workspaces[index];
+  if (!workspace) { selection = null; return; }
 
-  const workspace = workspaceFor(imported, base);
   const drawing = workspace.drawings[0];
-  const palette = workspace.palettes.find((p) => p.set === base) ?? workspace.palettes[0];
+  const palette = workspace.palettes.find((p) => p.set === workspace.base) ?? workspace.palettes[0];
   selection = drawing && palette ? { workspace, drawing, palette, isolated: null, view: 'original' } : null;
-  $<HTMLInputElement>('set-name').value = defaultSetName(base.sheets.map((s) => s.name));
+  $<HTMLInputElement>('set-name').value = defaultSetName(workspace.base.sheets.map((s) => s.name));
+  $<HTMLSelectElement>('workspace').value = String(index);
+}
+
+/**
+ * ⚠️ THE CHOOSER IS SHOWN WHENEVER THERE IS MORE THAN ONE, and that is the whole point of it. 📏 A person
+ * importing the LPC's `Body/Base` hands over 269 files that partition into ELEVEN groups nothing can travel
+ * between; showing one of them and saying nothing is how 269 files look like eight.
+ */
+function fillWorkspaceChooser(): void {
+  const chooser = $<HTMLSelectElement>('workspace');
+  chooser.replaceChildren();
+  workspaces.forEach((workspace, i) => {
+    const option = document.createElement('option');
+    option.value = String(i);
+    const body = workspace.base.sheets[0]?.name.split('/')[0] ?? '';
+    option.textContent = `${body || workspace.palettes[0]?.name} — ${workspace.files} ${t('workspace.files')}`;
+    chooser.append(option);
+  });
+  chooser.hidden = workspaces.length < 2;
 }
 
 function addRegion(name: string): void {
@@ -196,7 +218,9 @@ async function take(collected: Collected): Promise<void> {
   notice = collected.capped
     ? `${t('import.capped')} ${collected.files.length}`
     : collected.files.length === 0 ? t('import.none') : '';
-  openWorkspace();
+  workspaces = workspacesIn(imported);
+  fillWorkspaceChooser();
+  openWorkspace(0);
   render();
 }
 
@@ -256,6 +280,11 @@ function start(): void {
     // so a single `await` placed above this line loses every item, silently and with an empty result.
     const items = Array.from((event as DragEvent).dataTransfer?.items ?? []);
     await take(await collectFromDrop(items));
+  });
+
+  $<HTMLSelectElement>('workspace').addEventListener('change', (event) => {
+    openWorkspace(Number((event.currentTarget as HTMLSelectElement).value));
+    render();
   });
 
   $('views').addEventListener('change', (event) => {

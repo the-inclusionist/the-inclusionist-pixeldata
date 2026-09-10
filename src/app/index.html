@@ -60,7 +60,13 @@
     </section>
 
     <section class="panel panel--drawings" aria-labelledby="h-drawings">
-      <h2 id="h-drawings" data-i18n="panel.uniqueImages"></h2>
+      <div class="panel-head">
+        <h2 id="h-drawings" data-i18n="panel.uniqueImages"></h2>
+        <label class="sheet-pick">
+          <span data-i18n="workspace.label"></span>
+          <select id="workspace" hidden></select>
+        </label>
+      </div>
       <div id="drawings" class="body"></div>
     </section>
 

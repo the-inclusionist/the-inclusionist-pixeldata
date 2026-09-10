@@ -85,6 +85,8 @@ export interface Workspace {
   readonly base: SetView;
   readonly palettes: readonly PaletteView[];
   readonly drawings: readonly DrawingView[];
+  /** How many imported files one annotation against `base` would describe. What makes a workspace big. */
+  readonly files: number;
 }
 
 /**
@@ -123,7 +125,11 @@ export function workspaceFor(imported: Imported, base: SetView): Workspace {
     paletteCount: palettes.filter((p) => p.set.sheets.some((s) => s.drawingHash === sheet.drawingHash)).length,
   }));
 
-  return { base, palettes, drawings };
+  const files = palettes.reduce(
+    (n, p) => n + p.set.sheets.filter((sheet) => baseDrawings.has(sheet.drawingHash)).length,
+    0,
+  );
+  return { base, palettes, drawings, files };
 }
 
 /**
@@ -139,14 +145,11 @@ export function usedPositions(sheet: SheetView): Set<number> {
 }
 
 /**
- * How many positions of `base` no palette in `imported` can reach, summed over the palettes.
+ * How many positions of `base` no palette sharing a drawing with it can reach, summed over those palettes.
  *
- * 🔴 THIS IS THE NUMBER THAT SHOULD CHOOSE THE BASE, and taking the WIDEST palette instead — which looked
- * obvious — is the worst rule available. 📏 Measured in the browser on four LPC palettes of `Human_male`:
- * Ivory is the widest at 30 positions, and its `walk` is a drawing only Ivory has, so Coffee can reach it
- * only through `hurt` — which uses 11 of those 30. Nineteen positions went dark on the swap.
- *
- * A base is good when its drawings are SHARED, not when its palette is large.
+ * ⚠️ ZERO IS AMBIGUOUS AND MUST NOT BE READ AS GOOD ON ITS OWN. A base that shares a drawing with nobody
+ * loses nothing because there is nothing to lose, and scores exactly the same as a base every palette can
+ * reach completely. It is a TIE-BREAK, never the measure — see `filesCovered`.
  */
 export function unreachableFrom(imported: Imported, base: SetView): number {
   const byDrawing = new Map<string, SheetView>();
@@ -156,7 +159,7 @@ export function unreachableFrom(imported: Imported, base: SetView): number {
   for (const other of imported.sets) {
     if (other === base) continue;
     const shared = other.sheets.map((sheet) => byDrawing.get(sheet.drawingHash)).filter((s): s is SheetView => !!s);
-    if (shared.length === 0) continue; // not a palette of this workspace at all; it is not counted against it
+    if (shared.length === 0) continue; // not a palette of this workspace at all
 
     const reachable = new Set<number>();
     for (const sheet of shared) for (const index of usedPositions(sheet)) reachable.add(index);
@@ -166,20 +169,78 @@ export function unreachableFrom(imported: Imported, base: SetView): number {
 }
 
 /**
- * The palette to annotate against: the one leaving the fewest positions unreachable, and among equals the
- * widest — because when nothing is lost either way, more positions is more that can be said.
+ * 🔴 THE MEASURE THAT ACTUALLY MATTERS: how many of the imported FILES one annotation against `base` would
+ * describe — its own sheets, plus every sheet of every palette that draws the same thing.
+ *
+ * 📏 It exists because two earlier rules were each degenerate in one direction, both found on real art.
+ * «The WIDEST palette» picked one whose drawings nobody shared, so nineteen of thirty positions went dark on
+ * a swap. «The one that LOSES LEAST» then picked the Skeleton out of 269 LPC body sheets — loss zero,
+ * because it shares a drawing with nothing at all, and 8 files covered where another base covers 233.
+ * Counting files cannot be gamed by having nothing: an isolated palette covers only itself.
+ */
+export function filesCovered(imported: Imported, base: SetView): number {
+  const drawings = new Set(base.sheets.map((sheet) => sheet.drawingHash));
+  let total = 0;
+  for (const set of imported.sets) {
+    total += set.sheets.filter((sheet) => drawings.has(sheet.drawingHash)).length;
+  }
+  return total;
+}
+
+/**
+ * The palette to annotate against: the one describing the most files, and among equals the one leaving the
+ * fewest positions unreachable, and among those the widest.
  */
 export function chooseBase(imported: Imported): SetView | null {
   let best: SetView | null = null;
-  let bestLoss = Number.POSITIVE_INFINITY;
+  let bestKey: readonly [number, number, number] = [-1, 0, 0];
   for (const set of imported.sets) {
-    const loss = unreachableFrom(imported, set);
-    if (loss < bestLoss || (loss === bestLoss && best !== null && set.order.length > best.order.length)) {
+    const key = [filesCovered(imported, set), -unreachableFrom(imported, set), set.order.length] as const;
+    if (key[0] > bestKey[0]
+      || (key[0] === bestKey[0] && key[1] > bestKey[1])
+      || (key[0] === bestKey[0] && key[1] === bestKey[1] && key[2] > bestKey[2])) {
       best = set;
-      bestLoss = loss;
+      bestKey = key;
     }
   }
   return best;
+}
+
+/**
+ * 🔴 AN IMPORT IS NOT ONE WORKSPACE. Palettes belong together when they share a drawing, and that relation
+ * partitions a folder into groups nothing can travel between.
+ *
+ * 📏 Measured on the LPC's `Body/Base`: 269 files, 46 palette groups, **eleven workspaces**. The largest
+ * holds 233 files across 26 palettes — five human body types that share their drawings — and the smallest
+ * are single Orc sheets. Showing only one of them and saying nothing is how 269 files look like eight.
+ */
+export function workspacesIn(imported: Imported): Workspace[] {
+  const sets = imported.sets;
+  const parent = sets.map((_, i) => i);
+  const root = (i: number): number => { while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!; return i; };
+
+  const drawings = sets.map((set) => new Set(set.sheets.map((sheet) => sheet.drawingHash)));
+  for (let i = 0; i < sets.length; i++) {
+    for (let j = i + 1; j < sets.length; j++) {
+      for (const hash of drawings[i]!) {
+        if (drawings[j]!.has(hash)) { parent[root(i)] = root(j); break; }
+      }
+    }
+  }
+
+  const groups = new Map<number, SetView[]>();
+  sets.forEach((set, i) => {
+    const key = root(i);
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(set);
+  });
+
+  return [...groups.values()]
+    .map((group) => {
+      const inside: Imported = { sets: group, refused: [] };
+      return workspaceFor(inside, chooseBase(inside)!);
+    })
+    // Biggest first, because that is the one a person meant to open.
+    .sort((a, b) => b.files - a.files);
 }
 
 /** The sheet that is this drawing wearing this palette, or nothing when that palette does not hold it. */
