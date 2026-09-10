@@ -31,6 +31,9 @@ What does work, and is proved rather than claimed:
 - **The four panels.** The sheet at 4× with one colour singled out and the rest dropped to grey; the colour
   table where the meaning is decided; the set that shares this palette; and the same drawing in other
   palettes, each one clickable to **harvest** its ramps.
+- **`fixtures/`** — a valid set worked out BY HAND, with the exact pixels each variant must produce, and five
+  files a conforming reader must refuse. They are what makes [`docs/FORMAT.md`](docs/FORMAT.md) checkable
+  from the other side rather than merely written down.
 - **The format, written and read** ([`docs/FORMAT.md`](docs/FORMAT.md)), with the round trip watched on
   screen: the «recomposed» view goes the long way — written to text, read back, rebuilt from the palette —
   and «difference» lights up where the two disagree, so an empty panel is the proof.
@@ -63,8 +66,6 @@ so until it exists, the door is described and shut.
 
 ## What comes next
 
-- **`fixtures/`** — reference files the engine's future reader must reproduce exactly. `docs/FORMAT.md` is
-  the contract; the fixtures are what makes it checkable from the other side.
 - **The axe gate** in `.github/workflows/ci.yml`, which stays `false` until somebody has watched it pass.
   There is now a page worth auditing, so this is a debt rather than a placeholder.
 - **Frames and pivots.** The format carries them and nothing fills them in yet; a spritesheet is annotated

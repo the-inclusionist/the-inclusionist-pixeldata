@@ -1,0 +1,78 @@
+{
+  "//": "schema 99: a reader must refuse a version it does not know, never read it hopefully.",
+  "schema": 99,
+  "regions": {
+    "1": "skin",
+    "2": "shadow"
+  },
+  "levels": {
+    "1": {
+      "steps": 3,
+      "outline": 2
+    },
+    "2": {
+      "steps": 1,
+      "outline": null
+    }
+  },
+  "sheets": [
+    {
+      "name": "tiny",
+      "width": 4,
+      "height": 3,
+      "grid": [
+        "1x0 2x1 1x2",
+        "1x2 1x3 2x0",
+        "2x4 2x0"
+      ],
+      "frames": [
+        {
+          "name": "still",
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 3,
+          "pivot": [
+            2,
+            2
+          ],
+          "durationMs": 100
+        }
+      ]
+    }
+  ],
+  "colorMap": [
+    {
+      "region": 0,
+      "level": 0
+    },
+    {
+      "region": 1,
+      "level": 0
+    },
+    {
+      "region": 1,
+      "level": 1
+    },
+    {
+      "region": 1,
+      "level": 2
+    },
+    {
+      "region": 2,
+      "level": 0
+    }
+  ],
+  "palettes": [
+    "source",
+    "amber"
+  ],
+  "source": {
+    "author": "hand-written fixture",
+    "url": "https://example.invalid/tiny.png",
+    "door": "grant",
+    "licence": "CC0-1.0",
+    "outgoingLicence": "CC0-1.0",
+    "derivedFrom": null
+  }
+}
