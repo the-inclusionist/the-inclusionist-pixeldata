@@ -8,7 +8,7 @@ import { applyTranslations, setLanguage, t, LANGUAGES, type Language } from './i
 import { importFiles, type Imported, type SetView } from './import.ts';
 import { artPixels, paintArt, paintColours, paintSet, paintVariants, explain, type Selection, type View } from './panels.ts';
 import { variantsFor, harvestFromVariant, variantName, type Variant } from './variants.ts';
-import { buildOutputs, defaultSetName, annotationProblem, type Draft, type OutputFile } from './save.ts';
+import { buildOutputs, defaultSetName, annotationProblem, nonMonotonicRamps, toPalette, SOURCE_VARIANT, type Draft, type OutputFile } from './save.ts';
 import { collectPngFiles, collectFromInput, type Collected, type DirectoryLike } from './folder.ts';
 import type { Palette, Provenance } from '../format/semantic.ts';
 
@@ -117,8 +117,13 @@ function render(): void {
     );
   }
 
+  // ⚠️ A WARNING, NEVER A GATE. A ramp that does not climb is probably two levels swapped — the art would
+  // recolour with its shading inverted, which looks wrong and does not fail. But a FLAT ramp is legitimate,
+  // so refusing here would reject correct work.
+  const rough = selection ? nonMonotonicRamps(toPalette(draftOf(selection.set)), SOURCE_VARIANT) : [];
+  const warning = rough.length > 0 ? ` ⚠️ ${t('ramp.warning')} ${rough.length}` : '';
   const tail = notice || t('state.notWired');
-  $('explain').textContent = `${explain(selection, imported.refused.length)} — ${tail}`;
+  $('explain').textContent = `${explain(selection, imported.refused.length)} — ${tail}${warning}`;
   renderRefusals();
 }
 

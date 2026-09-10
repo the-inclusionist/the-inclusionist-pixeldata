@@ -148,6 +148,34 @@ export function recomposedPixels(draft: Draft, sheetName: string): Uint8Array {
   return recompose(set, sheetName, toPalette(draft), SOURCE_VARIANT);
 }
 
+/**
+ * 🔴 A RAMP THAT DOES NOT CLIMB IS PROBABLY AN ANNOTATION MISTAKE — and it WARNS rather than refuses.
+ *
+ * A ramp runs shadow to light, so its colours should rise in luminance. When they do not, two levels were
+ * most likely swapped, and the art will recolour with its shading inverted — which looks wrong and does not
+ * fail. But a FLAT ramp is legitimate (a single-colour material, a shadow at one alpha) and so is a
+ * deliberately inverted one, so refusing would be wrong. This says what it saw and leaves the decision.
+ */
+export function nonMonotonicRamps(palette: Palette, variant: string): { region: string; at: number }[] {
+  const found: { region: string; at: number }[] = [];
+  for (const [id, region] of Object.entries(palette.regions)) {
+    const ramp = region.variants[variant];
+    if (!ramp) continue;
+    for (let i = 1; i < ramp.length; i++) {
+      const before = ramp[i - 1];
+      const here = ramp[i];
+      if (before === undefined || here === undefined) continue;
+      if (luminanceOfHex(here) < luminanceOfHex(before)) found.push({ region: id, at: i });
+    }
+  }
+  return found;
+}
+
+function luminanceOfHex(hex: string): number {
+  const value = Number.parseInt(hex.replace('#', ''), 16);
+  return 0.299 * ((value >>> 24) & 0xff) + 0.587 * ((value >>> 16) & 0xff) + 0.114 * ((value >>> 8) & 0xff);
+}
+
 /** Where two images disagree, in magenta on black. Empty means the round trip held. */
 export function difference(a: Uint8Array, b: Uint8Array): { pixels: Uint8Array; differing: number } {
   const pixels = new Uint8Array(a.length);

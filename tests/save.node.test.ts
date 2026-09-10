@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { buildPng } from './helpers/build-png.ts';
 import { importFiles, type SetView } from '../src/app/import.ts';
 import {
-  defaultSetName, levelsOf, buildOutputs, annotationProblem, recomposedPixels, difference, type Draft,
+  defaultSetName, levelsOf, buildOutputs, annotationProblem, recomposedPixels, difference, nonMonotonicRamps, type Draft,
 } from '../src/app/save.ts';
 import { parseSet } from '../src/format/semantic.ts';
 
@@ -145,5 +145,32 @@ describe('🔴 the round trip, from the surface a person actually touches', () =
     expect(differing).toBe(1);
     expect([...pixels.slice(0, 4)]).toEqual([0, 0, 0, 0]); // agreeing pixels stay out of the way
     expect([...pixels.slice(4, 8)]).toEqual([255, 0, 255, 255]);
+  });
+});
+
+describe('🔴 nonMonotonicRamps — warns, and does not refuse', () => {
+  const ramp = (variant: string, colours: string[]) => ({
+    schema: 1 as const, name: 'p', regions: { 1: { variants: { [variant]: colours } } },
+  });
+
+  it('Right: a ramp that climbs shadow-to-light says nothing', () => {
+    expect(nonMonotonicRamps(ramp('source', ['#111111ff', '#888888ff', '#eeeeeeff']), 'source')).toEqual([]);
+  });
+
+  it('🔴 Right: a step that goes DOWN is reported, with the region and where', () => {
+    // Two levels swapped recolours the art with its shading inverted. It looks wrong and it does not fail,
+    // which is why something has to say it out loud.
+    expect(nonMonotonicRamps(ramp('source', ['#111111ff', '#eeeeeeff', '#888888ff']), 'source'))
+      .toEqual([{ region: '1', at: 2 }]);
+  });
+
+  it('🔴 Boundary: a FLAT ramp is legitimate and says nothing', () => {
+    // A single-colour material, or a shadow at one alpha. Refusing here would reject correct art, which is
+    // why this warns instead of gating.
+    expect(nonMonotonicRamps(ramp('source', ['#444444ff', '#444444ff']), 'source')).toEqual([]);
+  });
+
+  it('Boundary: a variant the palette does not hold is skipped rather than blamed', () => {
+    expect(nonMonotonicRamps(ramp('source', ['#111111ff']), 'red')).toEqual([]);
   });
 });
