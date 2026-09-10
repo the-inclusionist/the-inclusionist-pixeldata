@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// THE TWO WAYS THE SAME FILES ARE ORGANISED.
+//
+// 🎯 «Este software não é pra definir o que significa a COR, mas o que significa o PÍXEL naquela posição.»
+// The case that carries that sentence is the last one here: swap the palette, and every meaning stays put
+// while every swatch changes.
+//
+// 📏 The shape is the Liberated Pixel Cup's: `Body/Base/Human_male/` holds eight palette folders, each with
+// the same eight sheets. Sixty-four files, eight drawings, eight palettes, one annotation.
+import { describe, it, expect } from 'vitest';
+import { buildPng } from './helpers/build-png.ts';
+import { importFiles, type SetView } from '../src/app/import.ts';
+import { workspaceFor, paletteNameOf, paletteColours, sheetIn, coloursIn } from '../src/app/workspace.ts';
+import { packColour } from '../src/format/semantic.ts';
+
+/** Two drawings — `walk` and `hurt` — rendered in whichever two colours a palette brings. */
+const walk = (a: number[], b: number[]) =>
+  buildPng({ width: 2, height: 2, colorType: 6, scanlines: [[0, ...a, ...b], [0, ...b, ...a]] });
+const hurt = (a: number[], b: number[]) =>
+  buildPng({ width: 2, height: 2, colorType: 6, scanlines: [[0, ...a, ...a], [0, ...b, ...b]] });
+
+const COFFEE = [[90, 60, 40, 255], [40, 26, 18, 255]];
+const IVORY = [[230, 220, 200, 255], [150, 140, 120, 255]];
+const GOLD = [[220, 180, 40, 255], [130, 100, 20, 255]];
+
+/** The LPC layout: `<body>/<palette>/<sheet>.png`. */
+async function humanMale() {
+  const files: { name: string; bytes: Uint8Array }[] = [];
+  for (const [name, colours] of [['Coffee', COFFEE], ['Ivory', IVORY], ['Gold', GOLD]] as const) {
+    files.push({ name: `Human_male/${name}/walk.png`, bytes: await walk(colours[0]!, colours[1]!) });
+    files.push({ name: `Human_male/${name}/hurt.png`, bytes: await hurt(colours[0]!, colours[1]!) });
+  }
+  const imported = await importFiles(files);
+  return { imported, base: imported.sets[0]! };
+}
+
+describe('paletteNameOf', () => {
+  it('🎯 Right: it is the folder, which for the LPC IS the palette name', async () => {
+    const { imported } = await humanMale();
+    expect(imported.sets.map(paletteNameOf).sort()).toEqual(['Coffee', 'Gold', 'Ivory']);
+  });
+
+  it('Boundary: a flat import falls back to the file, never to a hash', () => {
+    const flat = { sheets: [{ name: 'lonely.png' }] } as unknown as SetView;
+    expect(paletteNameOf(flat)).toBe('lonely');
+  });
+});
+
+describe('workspaceFor', () => {
+  it('🎯 Right: three palettes and two drawings out of six files', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    expect(workspace.palettes).toHaveLength(3);
+    expect(workspace.drawings).toHaveLength(2);
+  });
+
+  it('🎯 Right: THE BADGE — each drawing says how many palettes hold it', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    expect(workspace.drawings.map((d) => d.paletteCount)).toEqual([3, 3]);
+  });
+
+  it('🔴 Boundary: a palette sharing no drawing is LEFT OUT, because no swap could reach it', async () => {
+    // Its colours cannot be travelled to — there is no correspondence — so offering it as a swap would
+    // offer one that cannot be made, and the person would click it and get nothing.
+    const { imported, base } = await humanMale();
+    const stranger = await importFiles([
+      { name: 'Other/Red/shield.png', bytes: await buildPng({ width: 1, height: 2, colorType: 6, scanlines: [[0, 9, 9, 9, 255], [0, 8, 8, 8, 255]] }) },
+    ]);
+    const workspace = workspaceFor({ sets: [...imported.sets, ...stranger.sets], refused: [] }, base);
+    expect(workspace.palettes).toHaveLength(3);
+  });
+});
+
+describe('sheetIn', () => {
+  it('Right: the same drawing wearing another palette', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    const other = workspace.palettes.find((p) => p.set !== base)!;
+    expect(sheetIn(other, workspace.drawings[0]!)!.drawingHash).toBe(workspace.drawings[0]!.sheet.drawingHash);
+  });
+});
+
+describe('🔴 paletteColours — the translation the whole design rests on', () => {
+  it('Right: the base palette is itself, position for position', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    const here = workspace.palettes.find((p) => p.set === base)!;
+    expect(paletteColours(workspace, here)).toEqual([...base.order]);
+  });
+
+  it('🎯 THE POINT: another palette gives a DIFFERENT colour at every position, and the same COUNT', async () => {
+    // This is what makes a meaning survive a swap. Position 3 is position 3 in every palette; only the
+    // colour it wears changes, so an annotation written against position 3 never has to be written again.
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    const other = workspace.palettes.find((p) => p.set !== base)!;
+
+    const mine = paletteColours(workspace, workspace.palettes.find((p) => p.set === base)!);
+    const theirs = paletteColours(workspace, other);
+
+    expect(theirs).toHaveLength(mine.length);
+    expect(theirs.every((c) => c !== undefined)).toBe(true);
+    // Every real colour moved; nothing but the transparent sentinel stayed the same.
+    const moved = theirs.filter((c, i) => c !== mine[i]).length;
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('Right: the colours it gives are the ones that palette actually holds', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    const gold = workspace.palettes.find((p) => p.name === 'Gold')!;
+    const colours = paletteColours(workspace, gold);
+    expect(colours).toContain(packColour(GOLD[0]!));
+    expect(colours).toContain(packColour(GOLD[1]!));
+  });
+
+  it('Exercise the exceptional: travelling to a drawing that does not match is refused', async () => {
+    const { imported, base } = await humanMale();
+    const workspace = workspaceFor(imported, base);
+    const [walkDrawing, hurtDrawing] = workspace.drawings;
+    const other = workspace.palettes.find((p) => p.set !== base)!;
+    // Deliberately cross the wires: walk's positions against hurt's pixels.
+    expect(() => coloursIn(base, walkDrawing!.sheet, sheetIn(other, hurtDrawing!)!)).toThrow(/not the same drawing/i);
+  });
+});
