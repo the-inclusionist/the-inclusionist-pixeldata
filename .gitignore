@@ -16,6 +16,15 @@ tests/__screenshots__/
 # leaves. The files this repository produces are versioned; the pixel art they describe is not.
 art-in/
 
+# Reference corpora cloned to exercise the tool — the Liberated Pixel Cup lives here.
+#
+# 🔴 THIS ONE IS NOT MERELY UNTIDY TO COMMIT, IT IS FORBIDDEN. The LPC is dual CC BY-SA 3.0 / GPL-3.0, and
+# ADR-0133 admits share-alike through the bridge on one condition, in its own words: «nenhum ficheiro CC
+# BY-SA entra tal e qual» — no such file enters as it is. Only an ADAPTATION crosses, carrying
+# `GPL-3.0-only` as its outgoing licence. What this repository may version is what the tool PRODUCES from
+# the art, never the art.
+research/
+
 # Operating system
 .DS_Store
 Thumbs.db

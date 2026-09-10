@@ -104,6 +104,66 @@ describe('decodePng — the colours a file holds, and not the colours a viewer w
     expect([...img.rgba]).toEqual([200, 100, 50, 128]);
   });
 
+describe('sub-byte depths, which a real asset pack is full of', () => {
+  // 📏 Measured on the Liberated Pixel Cup (Body + Clothes, 8 155 files): 44 files at bit depth 4 and 41 at
+  // bit depth 2, all of them indexed. They are beards and hair — real art, refused outright until this
+  // existed. The decoder was right to refuse rather than misread; it was wrong to have nothing to offer.
+  it('🔴 Right: four bits per pixel, indexed, with the row padded to a whole byte', async () => {
+    // Three pixels at four bits is twelve bits, so the row is two bytes and the last four are padding.
+    const img = await decodePng(await buildPng({
+      width: 3, height: 1, colorType: 3, bitDepth: 4,
+      before: [namedChunk('PLTE', [10, 10, 10, 20, 20, 20, 30, 30, 30])],
+      scanlines: [[0, 0x01, 0x20]], // indices 0, 1, 2
+    }));
+    expect([...img.rgba]).toEqual([10, 10, 10, 255, 20, 20, 20, 255, 30, 30, 30, 255]);
+  });
+
+  it('🔴 Right: two bits per pixel, indexed, five across a two-byte row', async () => {
+    const img = await decodePng(await buildPng({
+      width: 5, height: 1, colorType: 3, bitDepth: 2,
+      before: [namedChunk('PLTE', [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])],
+      scanlines: [[0, 0b00011011, 0b01000000]], // 0,1,2,3 then 1
+    }));
+    expect([...img.rgba.slice(0, 4)]).toEqual([0, 0, 0, 255]);
+    expect([...img.rgba.slice(12, 16)]).toEqual([3, 3, 3, 255]);
+    expect([...img.rgba.slice(16, 20)]).toEqual([1, 1, 1, 255]);
+  });
+
+  it('🔴 Boundary: an INDEX is never scaled, and a GREY sample always is', async () => {
+    // The distinction that would corrupt everything if it were missed. At four bits a grey sample of 15 is
+    // full white and must become 255; an index of 15 is the fifteenth palette entry and must stay 15.
+    const grey = await decodePng(await buildPng({
+      width: 2, height: 1, colorType: 0, bitDepth: 4,
+      scanlines: [[0, 0x0f]], // 0 then 15
+    }));
+    expect([...grey.rgba]).toEqual([0, 0, 0, 255, 255, 255, 255, 255]);
+  });
+
+  it('Right: one bit per pixel, greyscale, is black and white', async () => {
+    const img = await decodePng(await buildPng({ width: 2, height: 1, colorType: 0, bitDepth: 1, scanlines: [[0, 0b01000000]] }));
+    expect([...img.rgba]).toEqual([0, 0, 0, 255, 255, 255, 255, 255]);
+  });
+
+  it('Right: tRNS still gives an indexed entry its transparency at four bits', async () => {
+    const img = await decodePng(await buildPng({
+      width: 2, height: 1, colorType: 3, bitDepth: 4,
+      before: [namedChunk('PLTE', [9, 9, 9, 40, 50, 60]), namedChunk('tRNS', [0])],
+      scanlines: [[0, 0x01]],
+    }));
+    expect([...img.rgba]).toEqual([9, 9, 9, 0, 40, 50, 60, 255]);
+  });
+
+  it('Boundary: rows still unfilter, with the filter byte per row and a byte-sized stride', async () => {
+    const img = await decodePng(await buildPng({
+      width: 2, height: 2, colorType: 3, bitDepth: 4,
+      before: [namedChunk('PLTE', [0, 0, 0, 7, 7, 7, 8, 8, 8])],
+      scanlines: [[0, 0x12], [2, 0x00]], // second row is filter Up over a zero delta, so it repeats the first
+    }));
+    expect([...img.rgba.slice(0, 4)]).toEqual([7, 7, 7, 255]);
+    expect([...img.rgba.slice(8, 12)]).toEqual([7, 7, 7, 255]);
+  });
+});
+
   describe('Exercise the exceptional — it refuses loudly instead of guessing', () => {
     it('rejects something that is not a PNG', async () => {
       await expect(decodePng(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]))).rejects.toThrow(/not a PNG/i);

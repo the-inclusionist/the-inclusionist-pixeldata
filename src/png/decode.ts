@@ -16,6 +16,10 @@
 //
 // ⚠️ IT REFUSES WHAT IT CANNOT DO, BY NAME. 16-bit depth and interlacing are real parts of PNG and are not
 // implemented; a decoder that quietly read a 16-bit image as 8-bit would return a plausible, wrong picture.
+//
+// 📏 SUB-BYTE DEPTHS ARE SUPPORTED BECAUSE A REAL PACK NEEDS THEM. Measured on the Liberated Pixel Cup
+// (Body + Clothes, 8 155 files): 44 files at bit depth 4 and 41 at bit depth 2, all indexed — beards and
+// hair, refused outright before this. Refusing was the right behaviour and having nothing to offer was not.
 
 /** What a decoded PNG is, and nothing more: size, pixels, and what the file said about colour. */
 export interface DecodedPng {
@@ -31,7 +35,18 @@ export interface DecodedPng {
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 const COLOUR_MANAGEMENT = ['gAMA', 'iCCP', 'sRGB', 'cHRM'];
-const BYTES_PER_PIXEL: Readonly<Record<number, number>> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+/** Samples per pixel, by colour type: grey, RGB, palette index, grey+alpha, RGBA. */
+const CHANNELS: Readonly<Record<number, number>> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+/** What the PNG specification allows, so an impossible combination is named rather than half-read. */
+const ALLOWED_DEPTHS: Readonly<Record<number, readonly number[]>> = {
+  0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16],
+};
+/**
+ * Scaling a sub-byte GREY sample up to a byte: 1 bit → 0 or 255, 2 bits → 0/85/170/255, 4 bits → ×17.
+ * 🔴 It applies to grey samples ONLY. An INDEX is not a quantity — scaling one would silently point at a
+ * different palette entry, and every pixel of the image would be the wrong colour with no error anywhere.
+ */
+const GREY_SCALE: Readonly<Record<number, number>> = { 1: 255, 2: 85, 4: 17, 8: 1 };
 
 interface Chunk {
   readonly type: string;
@@ -58,8 +73,7 @@ function readChunks(bytes: Uint8Array): Chunk[] {
  * Undo the per-scanline filter. The five types are defined in PNG §9.2, and every one of them is arithmetic
  * MODULO 256 — a decoder that clamps produces a plausible image with wrong bytes and no error.
  */
-function unfilter(raw: Uint8Array, width: number, height: number, bpp: number): Uint8Array {
-  const stride = width * bpp;
+function unfilter(raw: Uint8Array, stride: number, height: number, bpp: number): Uint8Array {
   const out = new Uint8Array(height * stride);
   let p = 0;
   for (let y = 0; y < height; y++) {
@@ -97,34 +111,66 @@ async function inflate(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-function toRgba(rows: Uint8Array, width: number, height: number, colorType: number, plte?: Uint8Array, trns?: Uint8Array): Uint8Array {
-  const bpp = BYTES_PER_PIXEL[colorType]!;
+/**
+ * Read the `index`-th sample of a row, whatever the bit depth. Sub-byte samples are packed MOST significant
+ * bits first, and a row is padded to a whole byte — the padding is read by nobody because `width` bounds the
+ * loop, which is why the extra bits can hold anything at all.
+ */
+function sampleAt(rows: Uint8Array, rowStart: number, index: number, bitDepth: number): number {
+  if (bitDepth === 8) return rows[rowStart + index]!;
+  const perByte = 8 / bitDepth;
+  const byte = rows[rowStart + Math.floor(index / perByte)]!;
+  const shift = 8 - bitDepth * ((index % perByte) + 1);
+  return (byte >> shift) & ((1 << bitDepth) - 1);
+}
+
+function toRgba(
+  rows: Uint8Array,
+  width: number,
+  height: number,
+  colorType: number,
+  bitDepth: number,
+  stride: number,
+  plte?: Uint8Array,
+  trns?: Uint8Array,
+): Uint8Array {
+  const channels = CHANNELS[colorType]!;
   const rgba = new Uint8Array(width * height * 4);
-  for (let i = 0; i < width * height; i++) {
-    const s = i * bpp, d = i * 4;
-    switch (colorType) {
-      case 6: // RGBA
-        rgba[d] = rows[s]!; rgba[d + 1] = rows[s + 1]!; rgba[d + 2] = rows[s + 2]!; rgba[d + 3] = rows[s + 3]!;
-        break;
-      case 2: // RGB — no alpha channel means every pixel is opaque
-        rgba[d] = rows[s]!; rgba[d + 1] = rows[s + 1]!; rgba[d + 2] = rows[s + 2]!; rgba[d + 3] = 255;
-        break;
-      case 0: // greyscale
-        rgba[d] = rgba[d + 1] = rgba[d + 2] = rows[s]!; rgba[d + 3] = 255;
-        break;
-      case 4: // greyscale + alpha
-        rgba[d] = rgba[d + 1] = rgba[d + 2] = rows[s]!; rgba[d + 3] = rows[s + 1]!;
-        break;
-      case 3: { // indexed
-        if (!plte) throw new Error('indexed image (colour type 3) with no PLTE chunk');
-        const idx = rows[s]!;
-        rgba[d] = plte[idx * 3]!; rgba[d + 1] = plte[idx * 3 + 1]!; rgba[d + 2] = plte[idx * 3 + 2]!;
-        // tRNS may be shorter than the palette; entries past its end are fully opaque (PNG §11.3.2).
-        rgba[d + 3] = trns && idx < trns.length ? trns[idx]! : 255;
-        break;
+
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * stride;
+    for (let x = 0; x < width; x++) {
+      const d = (y * width + x) * 4;
+      const s = x * channels;
+      const at = (channel: number): number => sampleAt(rows, rowStart, s + channel, bitDepth);
+
+      switch (colorType) {
+        case 6: // RGBA
+          rgba[d] = at(0); rgba[d + 1] = at(1); rgba[d + 2] = at(2); rgba[d + 3] = at(3);
+          break;
+        case 2: // RGB — no alpha channel means every pixel is opaque
+          rgba[d] = at(0); rgba[d + 1] = at(1); rgba[d + 2] = at(2); rgba[d + 3] = 255;
+          break;
+        case 0: { // greyscale, and the sample is a QUANTITY, so it scales to a byte
+          const grey = at(0) * GREY_SCALE[bitDepth]!;
+          rgba[d] = rgba[d + 1] = rgba[d + 2] = grey; rgba[d + 3] = 255;
+          break;
+        }
+        case 4: // greyscale + alpha, eight bits only per the specification
+          rgba[d] = rgba[d + 1] = rgba[d + 2] = at(0); rgba[d + 3] = at(1);
+          break;
+        case 3: { // indexed — the sample is an INDEX and is never scaled
+          if (!plte) throw new Error('indexed image (colour type 3) with no PLTE chunk');
+          const idx = at(0);
+          if (idx * 3 + 2 >= plte.length) throw new Error(`palette index ${idx} is past the end of PLTE`);
+          rgba[d] = plte[idx * 3]!; rgba[d + 1] = plte[idx * 3 + 1]!; rgba[d + 2] = plte[idx * 3 + 2]!;
+          // tRNS may be shorter than the palette; entries past its end are fully opaque (PNG §11.3.2).
+          rgba[d + 3] = trns && idx < trns.length ? trns[idx]! : 255;
+          break;
+        }
+        default:
+          throw new Error(`unsupported colour type ${colorType}`);
       }
-      default:
-        throw new Error(`unsupported colour type ${colorType}`);
     }
   }
   return rgba;
@@ -140,17 +186,30 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
   const width = head.getUint32(0), height = head.getUint32(4);
   const bitDepth = ihdr.data[8]!, colorType = ihdr.data[9]!, interlace = ihdr.data[12]!;
 
-  if (bitDepth !== 8) throw new Error(`bit depth ${bitDepth} is not supported — this reads 8-bit images only`);
+  if (CHANNELS[colorType] === undefined) throw new Error(`unsupported colour type ${colorType}`);
+  if (bitDepth === 16) throw new Error('bit depth 16 is not supported — this reads 8-bit samples and below');
+  if (!ALLOWED_DEPTHS[colorType]!.includes(bitDepth)) {
+    throw new Error(`bit depth ${bitDepth} is not allowed with colour type ${colorType}`);
+  }
   if (interlace !== 0) throw new Error('interlaced (Adam7) images are not supported');
-  if (BYTES_PER_PIXEL[colorType] === undefined) throw new Error(`unsupported colour type ${colorType}`);
 
   const idat = chunks.filter((c) => c.type === 'IDAT');
   const joined = new Uint8Array(idat.reduce((n, c) => n + c.data.length, 0));
   let at = 0;
   for (const c of idat) { joined.set(c.data, at); at += c.data.length; }
 
-  const rows = unfilter(await inflate(joined), width, height, BYTES_PER_PIXEL[colorType]!);
-  const rgba = toRgba(rows, width, height, colorType, chunks.find((c) => c.type === 'PLTE')?.data, chunks.find((c) => c.type === 'tRNS')?.data);
+  // ⚠️ THE FILTER WORKS IN BYTES AND THE IMAGE IN SAMPLES, and below one byte per pixel they part company.
+  // `bpp` is the distance to the left neighbour «rounding up to one» (PNG §9.2), so at four bits it is 1 —
+  // the filter reaches back a whole byte, which is TWO pixels. Using the sample width here instead would
+  // unfilter every sub-byte image into noise.
+  const bitsPerPixel = CHANNELS[colorType]! * bitDepth;
+  const stride = Math.ceil((width * bitsPerPixel) / 8);
+  const rows = unfilter(await inflate(joined), stride, height, Math.max(1, Math.ceil(bitsPerPixel / 8)));
+  const rgba = toRgba(
+    rows, width, height, colorType, bitDepth, stride,
+    chunks.find((c) => c.type === 'PLTE')?.data,
+    chunks.find((c) => c.type === 'tRNS')?.data,
+  );
 
   return {
     width,
